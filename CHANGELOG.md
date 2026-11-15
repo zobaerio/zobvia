@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.3.0 — 2026-11-15
+
+More video kinds, a 3D set, an animation kit, and sound v2.
+
+### Added
+- **Sound v2 — 12 SFX types.** `scripts/sfx_gen.py` gains `riser`
+  (0.8 s rising sweep), `sparkle` (0.5 s twinkle arpeggio), `ding`
+  (0.6 s bell), `shutter` (0.15 s camera-click pair) and `boom-soft`
+  (0.7 s soft cinematic low hit). Quality pass on all 12: ADSR-style
+  envelopes, added harmonic content, a micro fade at the file edges,
+  and peak normalisation to **−3 dBFS** — no clipping, consistent
+  loudness (the test suite checks every WAV's duration and peak).
+  `references/sfx-library.md` documents all 12 with recipes, an event
+  mapping for the new types, and a sound-design section (themes,
+  voice-first rule, −3 dB peak rule). Still **SFX only, no music**.
+- **SFX themes** in the converter: `--sfx-theme soft|cinematic|playful`
+  (default `soft`) changes which types voice the 5–7 events —
+  cinematic leans on riser / boom-soft / whoosh / thud, playful on
+  pop / sparkle / ding / pluck. Recorded in `timeline.json`.
+- **3D set — 3 new pipelines** (`cube-3d`, `flip-3d`, `parallax-3d`):
+  a rotating cube carrying the cue's chunks on its faces, a card flip
+  revealing the cue's second half, and a three-layer parallax stage.
+  Implemented with **CSS 3D transforms inside Remotion** (perspective,
+  preserve-3d, translateZ) — honestly labelled: this is **not**
+  Three.js/WebGL. Implemented pipelines: 16 core + 3 expansion = **19**.
+- **8 genre video types** via `--genre news|podcast|product|
+  slideshow|quote|tutorial|scoreboard|lyrics`: dedicated data-driven
+  scenes (news banner + lower-third, podcast discs + waveform,
+  product hero panel, Ken Burns slideshow panel, quote typography,
+  numbered tutorial steps, sports scoreboard, lyrics lines). Middle
+  scenes use the genre component; the hook and Statement → Recap →
+  CTA ending stay. Each genre applies its default caption preset
+  when `--captions` is not given (news → classic-bottom, lyrics →
+  karaoke-highlight, podcast → boxed-bold). Without `--genre`, a
+  strong keyword match only prints a suggestion — never a silent
+  switch. Product and scoreboard scenes show **only numbers/prices
+  written in the cue itself** — nothing is invented. The slideshow
+  scene animates a themed gradient panel (Ken Burns), not photos;
+  real images from `public/` slot into hand-authored timelines.
+- **Animation kit** (`src/components/anim.tsx`): 8 reusable,
+  frame-driven helpers — FadeUp, SpringPop, BlurIn, CounterUp,
+  DrawLine, ShineText, FloatY, GlitchSlice — grapheme-safe (whole
+  clusters only, `letterSpacing: 0`), used inside the new scenes.
+
+### Verification
+Tests 34/34 (7 new: 12-type SFX durations + peak levels, genre scene
+planning + caption defaults, invalid genre/theme exit 2, cinematic
+theme placement, 3D/genre registration, recorded defaults). Real
+converter runs: `--genre news` (English example), `--genre podcast
+--aspect 9:16` (Bengali example), `--sfx-theme cinematic` (riser +
+boom-soft in the SFX map). `tsc --noEmit` passes in the starter and
+in a generated project. Still unverified, unchanged from 1.2.0: a
+live end-to-end render on this machine (sandbox proxy blocks Google
+Fonts for headless Chromium) and live Whisper transcription (no
+backend installed here; only the exit-3 degradation is exercised).
+
 ## 1.2.0 — 2026-11-15
 
 The professional release: every pipeline in code, a family-respecting

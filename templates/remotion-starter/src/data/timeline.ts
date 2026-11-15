@@ -19,7 +19,7 @@ export interface TimelineScene {
   end: number;
   /** Exact on-screen text (from the SRT, unedited). */
   text: string;
-  /** Pipeline id: kinetic-hook | glossy-ui | carousel-3d | dark-tech | glass-cards | minimal-clean | gradient-fluid | statement | bento | dashboard | recap | timeline | hub-spoke | before-after | flat-vector | line-draw | cta */
+  /** Pipeline id: kinetic-hook | glossy-ui | carousel-3d | dark-tech | glass-cards | minimal-clean | gradient-fluid | statement | bento | dashboard | recap | timeline | hub-spoke | before-after | flat-vector | line-draw | cta | cube-3d | flip-3d | parallax-3d | news | podcast | product | slideshow | quote | tutorial | scoreboard | lyrics */
   pipeline: string;
   /** Entrance transition for this scene: none | cut | fade | slide | zoom | whip */
   transition?: string;
@@ -44,6 +44,10 @@ export interface TimelineData {
   captions?: string;
   /** Layout family for the video (e.g. "stage", "grid", "flow"). */
   family?: string;
+  /** Genre id for genre scenes (e.g. "news", "podcast", "lyrics"). */
+  genre?: string;
+  /** SFX theme id chosen for this video, when one applies. */
+  sfxTheme?: string;
   voiceover?: VoiceoverInfo | null;
 }
 

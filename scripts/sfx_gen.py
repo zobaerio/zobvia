@@ -13,7 +13,7 @@ import wave
 from pathlib import Path
 
 SR = 44100
-PEAK = 0.7
+PEAK = 0.708
 
 try:
     import numpy as np
@@ -40,7 +40,8 @@ def gen_pop_py():
         t = i / SR
         f = 300 + 500 * math.exp(-t * 25)
         phase += 2 * math.pi * f / SR
-        out.append(math.sin(phase) * math.exp(-t * 28))
+        out.append(math.sin(phase) * math.exp(-t * 28)
+                   + 0.3 * math.sin(2 * phase) * math.exp(-t * 40))
     return out
 
 def gen_click_py():
@@ -103,8 +104,68 @@ def gen_thud_py():
         out.append(math.sin(phase) * math.exp(-t * 16))
     return out
 
+def gen_riser_py():
+    dur = 0.80; n = int(dur * SR); out = []; phase = 0.0
+    for i in range(n):
+        t = i / SR; frac = t / dur
+        f = 180 * ((1400 / 180) ** frac)
+        phase += 2 * math.pi * f / SR
+        env = frac ** 1.5
+        out.append((math.sin(phase) + 0.25 * math.sin(2 * phase)) * env)
+    return out
+
+def gen_sparkle_py():
+    dur = 0.50; n = int(dur * SR); out = []
+    notes = [1568, 2093, 2637, 3136]
+    starts = [0.0, 0.09, 0.18, 0.27]
+    for i in range(n):
+        t = i / SR; total = 0.0
+        for freq, start in zip(notes, starts):
+            if t >= start:
+                dt = t - start
+                total += (math.sin(2 * math.pi * freq * dt)
+                          + 0.3 * math.sin(2 * math.pi * freq * 2 * dt)) * math.exp(-dt * 14)
+        out.append(total)
+    return out
+
+def gen_ding_py():
+    n = int(0.60 * SR); out = []
+    f0 = 1046.5
+    for i in range(n):
+        t = i / SR
+        out.append((math.sin(2 * math.pi * f0 * t)
+                    + 0.4 * math.sin(2 * math.pi * f0 * 2.76 * t)
+                    + 0.15 * math.sin(2 * math.pi * f0 * 5.4 * t)) * math.exp(-t * 6))
+    return out
+
+def gen_shutter_py():
+    rng = random.Random(23); n = int(0.15 * SR); out = []; prev = 0.0
+    for i in range(n):
+        t = i / SR
+        white = rng.uniform(-1, 1)
+        hp = white - prev; prev = white
+        in_burst = (0.0 <= t < 0.02) or (0.07 <= t < 0.095)
+        out.append(hp if in_burst else 0.0)
+    return out
+
+def gen_boom_soft_py():
+    rng = random.Random(31); dur = 0.70; n = int(dur * SR); out = []; phase = 0.0; state = 0.0
+    for i in range(n):
+        t = i / SR; frac = t / dur
+        f = 60 + (34 - 60) * frac
+        phase += 2 * math.pi * f / SR
+        attack = min(t / 0.03, 1.0) if t < 0.03 else 1.0
+        env = attack * math.exp(-t * 4.5)
+        # lowpassed noise swell
+        state += 0.05 * (rng.uniform(-1, 1) - state)
+        noise = state * 3.0
+        out.append((math.sin(phase) + 0.25 * noise) * env)
+    return out
+
 PY_GENS = {"pop": gen_pop_py, "click": gen_click_py, "whoosh": gen_whoosh_py,
-           "pluck": gen_pluck_py, "chime": gen_chime_py, "swipe": gen_swipe_py, "thud": gen_thud_py}
+           "pluck": gen_pluck_py, "chime": gen_chime_py, "swipe": gen_swipe_py, "thud": gen_thud_py,
+           "riser": gen_riser_py, "sparkle": gen_sparkle_py, "ding": gen_ding_py,
+           "shutter": gen_shutter_py, "boom-soft": gen_boom_soft_py}
 
 # ---------- numpy generators ----------
 
@@ -114,7 +175,8 @@ def _np_t(dur):
 def gen_pop_np():
     t = _np_t(0.12); f = 300 + 500 * np.exp(-t * 25)
     phase = 2 * np.pi * np.cumsum(f) / SR
-    return (np.sin(phase) * np.exp(-t * 28)).tolist()
+    return (np.sin(phase) * np.exp(-t * 28)
+            + 0.3 * np.sin(2 * phase) * np.exp(-t * 40)).tolist()
 
 def gen_click_np():
     rng = np.random.default_rng(42); t = _np_t(0.06)
@@ -158,8 +220,56 @@ def gen_thud_np():
     phase = 2 * np.pi * np.cumsum(f) / SR
     return (np.sin(phase) * np.exp(-t * 16)).tolist()
 
+def gen_riser_np():
+    dur = 0.80; t = _np_t(dur); frac = t / dur
+    f = 180 * ((1400 / 180) ** frac)
+    phase = 2 * np.pi * np.cumsum(f) / SR
+    env = frac ** 1.5
+    return ((np.sin(phase) + 0.25 * np.sin(2 * phase)) * env).tolist()
+
+def gen_sparkle_np():
+    dur = 0.50; t = _np_t(dur); out = np.zeros(len(t))
+    notes = [1568, 2093, 2637, 3136]
+    starts = [0.0, 0.09, 0.18, 0.27]
+    for freq, start in zip(notes, starts):
+        dt = t - start
+        mask = dt >= 0
+        term = np.zeros(len(t))
+        term[mask] = (np.sin(2 * np.pi * freq * dt[mask])
+                      + 0.3 * np.sin(2 * np.pi * freq * 2 * dt[mask])) * np.exp(-dt[mask] * 14)
+        out = out + term
+    return out.tolist()
+
+def gen_ding_np():
+    t = _np_t(0.60); f0 = 1046.5
+    return ((np.sin(2 * np.pi * f0 * t)
+             + 0.4 * np.sin(2 * np.pi * f0 * 2.76 * t)
+             + 0.15 * np.sin(2 * np.pi * f0 * 5.4 * t)) * np.exp(-t * 6)).tolist()
+
+def gen_shutter_np():
+    rng = np.random.default_rng(23); n = int(0.15 * SR); t = _np_t(0.15)
+    white = rng.uniform(-1, 1, n); hp = np.diff(white, prepend=0)
+    env = np.zeros(n)
+    env[(t >= 0.0) & (t < 0.02)] = 1.0
+    env[(t >= 0.07) & (t < 0.095)] = 1.0
+    return (hp * env).tolist()
+
+def gen_boom_soft_np():
+    rng = np.random.default_rng(31); dur = 0.70; n = int(dur * SR); t = _np_t(dur)
+    f = 60 + (34 - 60) * (t / dur)
+    phase = 2 * np.pi * np.cumsum(f) / SR
+    attack = np.minimum(t / 0.03, 1.0)
+    env = attack * np.exp(-t * 4.5)
+    noise = rng.uniform(-1, 1, n); lp = np.zeros(n); state = 0.0
+    for i in range(n):
+        state += 0.05 * (noise[i] - state); lp[i] = state
+    noise_term = lp * 3.0
+    return ((np.sin(phase) + 0.25 * noise_term) * env).tolist()
+
 NP_GENS = {"pop": gen_pop_np, "click": gen_click_np, "whoosh": gen_whoosh_np,
-           "pluck": gen_pluck_np, "chime": gen_chime_np, "swipe": gen_swipe_np, "thud": gen_thud_np}
+           "pluck": gen_pluck_np, "chime": gen_chime_np, "swipe": gen_swipe_np, "thud": gen_thud_np,
+           "riser": gen_riser_np, "sparkle": gen_sparkle_np, "ding": gen_ding_np,
+           "shutter": gen_shutter_np, "boom-soft": gen_boom_soft_np}
 
 ALL_SOUNDS = list(PY_GENS.keys())
 
@@ -168,7 +278,17 @@ def normalise(samples):
     if peak == 0:
         return samples
     scale = PEAK / peak
-    return [s * scale for s in samples]
+    scaled = [s * scale for s in samples]
+    # Micro fade (raised ramp) over first and last ~64 samples to
+    # remove boundary clicks.
+    n = len(scaled)
+    fade = min(64, n // 2)
+    if fade > 0:
+        for i in range(fade):
+            factor = 0.5 * (1 - math.cos(math.pi * i / fade))
+            scaled[i] = scaled[i] * factor
+            scaled[n - 1 - i] = scaled[n - 1 - i] * factor
+    return scaled
 
 def write_wav(path, samples):
     frames = b"".join(struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples)

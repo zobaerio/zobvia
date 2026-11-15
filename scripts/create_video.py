@@ -4,7 +4,8 @@
 Usage:
     python3 scripts/create_video.py --srt <file.srt> --palette "<tone|#hex>" \
         --out <dir> [--aspect 16:9|9:16|1:1 | --aspects 16:9,9:16,1:1] \
-        [--title "..."] [--captions <preset-id>] \
+        [--title "..."] [--captions <preset-id>] [--genre <genre>] \
+        [--sfx-theme <theme>] \
         [--voiceover <file.mp3|file.wav>] [--render]
 
 What it does (deterministically — same input, same plan):
@@ -37,8 +38,9 @@ What it does (deterministically — same input, same plan):
      "zoom"); otherwise a pipeline change at 0-based index % 6 == 5
      cycles slide/zoom/fade; everything else is "cut".
   3. Copies templates/remotion-starter/ into --out (no node_modules/out),
-     then writes src/data/timeline.json (with top-level "family" and
-     "captions", plus "voiceover" when --voiceover is given),
+     then writes src/data/timeline.json (with top-level "family",
+     "captions", "genre" and "sfxTheme", plus "voiceover" when
+     --voiceover is given),
      src/theme.ts (palette resolved through color_palette.py,
      WCAG-checked), timeline.md (with a Transition column),
      public/sfx/*.wav + src/data/sfx.json (5-7 SFX events at scene
@@ -46,10 +48,24 @@ What it does (deterministically — same input, same plan):
      PROJECT_README.md with the 3 delivery commands.
 
 Extra flags:
-  --captions <preset-id>  One of: word-by-word (default),
+  --captions <preset-id>  One of: word-by-word,
       karaoke-highlight, bilingual-stack, classic-bottom, boxed-bold,
       minimal-line. Invalid -> exit 2. Recorded in timeline.json and
-      PROJECT_README.md.
+      PROJECT_README.md. Default is resolved: an explicit flag wins;
+      else the genre default when --genre is not "general" (news ->
+      classic-bottom, lyrics -> karaoke-highlight, podcast ->
+      boxed-bold, other genres -> word-by-word); else word-by-word.
+  --genre <genre>         One of: general (default), news, podcast,
+      product, slideshow, quote, tutorial, scoreboard, lyrics.
+      Invalid -> exit 2. When not "general", every middle scene uses
+      the genre id as its pipeline (hook and the statement/recap/cta
+      ending are unchanged); the family is still computed from the
+      SRT as usual. Recorded as "genre" in timeline.json. When
+      omitted / "general", a keyword-based suggestion may be printed
+      (never auto-applied).
+  --sfx-theme <theme>     One of: soft (default), cinematic, playful.
+      Invalid -> exit 2. Selects the role/middle SFX maps used by
+      plan_sfx. Recorded as "sfxTheme" in timeline.json.
   --aspect / --aspects    Mutually exclusive. --aspect keeps the
       single-project output at --out itself (effective default 16:9).
       --aspects takes a comma-separated subset of 16:9,9:16,1:1 and
@@ -144,8 +160,40 @@ CAPTION_PRESETS = [
 ]
 
 # SFX locked to scene roles (see references/sfx-library.md mapping).
-ROLE_SFX = {HOOK: "whoosh", STATEMENT: "thud", RECAP: "pluck", CTA: "chime"}
-MIDDLE_SFX = ["pop", "click", "swipe"]
+SFX_THEMES = ["soft", "cinematic", "playful"]
+THEME_ROLE_SFX = {
+    "soft": {HOOK: "whoosh", STATEMENT: "thud", RECAP: "pluck", CTA: "chime"},
+    "cinematic": {HOOK: "riser", STATEMENT: "boom-soft", RECAP: "thud", CTA: "chime"},
+    "playful": {HOOK: "sparkle", STATEMENT: "pop", RECAP: "pluck", CTA: "ding"},
+}
+THEME_MIDDLE_SFX = {
+    "soft": ["pop", "click", "swipe"],
+    "cinematic": ["whoosh", "riser", "thud"],
+    "playful": ["pop", "ding", "sparkle"],
+}
+# Backwards-compatible aliases for the default (soft) theme.
+ROLE_SFX = THEME_ROLE_SFX["soft"]
+MIDDLE_SFX = THEME_MIDDLE_SFX["soft"]
+
+GENRES = ["general", "news", "podcast", "product", "slideshow", "quote",
+          "tutorial", "scoreboard", "lyrics"]
+GENRE_IDS = [g for g in GENRES if g != "general"]
+GENRE_CAPTION_DEFAULTS = {
+    "news": "classic-bottom",
+    "lyrics": "karaoke-highlight",
+    "podcast": "boxed-bold",
+}
+
+GENRE_KEYWORDS = {
+    "news": ("breaking", "news", "সংবাদ", "খবর"),
+    "scoreboard": ("score", "goal", "match", "গোল", "স্কোর", "খেলা"),
+    "product": ("price", "৳", "taka", "টাকা", "buy", "offer", "দাম", "কিনুন"),
+    "tutorial": STEP_WORDS,
+    "podcast": ("podcast", "episode", "পডকাস্ট"),
+    "lyrics": ("song", "lyrics", "গান", "সুর"),
+    "quote": ("quote", "উক্তি", "বলেছেন"),
+    "slideshow": ("photo", "ছবি", "album", "ভ্রমণ"),
+}
 
 
 # ---------------------------------------------------------------- palettes
@@ -253,12 +301,17 @@ def resolve_palette(spec):
 
 # ---------------------------------------------------------------- planning
 
-def plan_scenes(cues):
+def plan_scenes(cues, genre="general"):
     """Assign a pipeline and a transition to every cue.
 
     Returns (scenes, family) where scenes is a list of scene dicts
     (each with "pipeline" and "transition") and family is one of
     "grid", "stage" or "flow".
+
+    When genre != "general", every middle scene's pipeline is the
+    genre id (hook and the statement/recap/cta ending are unchanged);
+    family is still computed from the SRT signal as described below
+    and returned unchanged.
 
     Family selection (deterministic, from the middle cues only):
       num_count  = middle cues containing a number (NUMBER_RE)
@@ -337,6 +390,11 @@ def plan_scenes(cues):
                 pipelines[i] = STAGE_ROTATION[rotation % len(STAGE_ROTATION)]
                 rotation += 1
 
+    # --- genre override: middles use the genre's dedicated layout ---
+    if genre != "general":
+        for i in middle:
+            pipelines[i] = genre
+
     scenes = []
     for cue, pipeline in zip(cues, pipelines):
         scenes.append({
@@ -373,32 +431,39 @@ def plan_scenes(cues):
     return scenes, family
 
 
-def plan_sfx(scenes):
+def plan_sfx(scenes, theme="soft"):
     """5-7 SFX events at scene boundaries (midpoints top up short SRTs).
 
-    Role mapping: hook -> whoosh, statement -> thud, recap -> pluck,
-    cta -> chime, middle scenes rotate pop/click/swipe. Boundary events
-    are taken in priority order (hook, statement, recap, cta, then
-    middles in scene order) up to 7; if fewer than 5 boundaries exist,
-    scene midpoints are added until 5 events exist.
+    Role mapping is pipeline-based and theme-dependent (see
+    THEME_ROLE_SFX / THEME_MIDDLE_SFX): for the default "soft" theme,
+    hook -> whoosh, statement -> thud, recap -> pluck, cta -> chime,
+    middle scenes rotate pop/click/swipe. Boundary events are taken
+    in priority order (hook, statement, recap, cta, then middles in
+    scene order) up to 7; if fewer than 5 boundaries exist, scene
+    midpoints are added until 5 events exist.
     """
+    if theme not in THEME_ROLE_SFX:
+        raise ValueError(
+            f"unknown sfx theme '{theme}'. Valid themes: {', '.join(SFX_THEMES)}")
+    role_sfx = THEME_ROLE_SFX[theme]
+    middle_sfx = THEME_MIDDLE_SFX[theme]
     by_role = {}
     for pos, scene in enumerate(scenes):
         by_role.setdefault(scene["pipeline"], []).append(pos)
 
     def sound_for(pos):
         pipeline = scenes[pos]["pipeline"]
-        if pipeline in ROLE_SFX:
-            return ROLE_SFX[pipeline]
+        if pipeline in role_sfx:
+            return role_sfx[pipeline]
         middle_pos = [p for p, s in enumerate(scenes)
-                      if s["pipeline"] not in ROLE_SFX]
-        return MIDDLE_SFX[middle_pos.index(pos) % len(MIDDLE_SFX)]
+                      if s["pipeline"] not in role_sfx]
+        return middle_sfx[middle_pos.index(pos) % len(middle_sfx)]
 
     priority = []
     for role in (HOOK, STATEMENT, RECAP, CTA):
         priority.extend(by_role.get(role, []))
     priority.extend(p for p, s in enumerate(scenes)
-                    if s["pipeline"] not in ROLE_SFX)
+                    if s["pipeline"] not in role_sfx)
     chosen = sorted(priority[:7])
 
     events = [{
@@ -422,6 +487,30 @@ def plan_sfx(scenes):
         pos += 1
     events.sort(key=lambda e: e["atSeconds"])
     return events
+
+
+def suggest_genre(cues):
+    """Return the best-matching genre id for cues, or None.
+
+    Counts case-insensitive substring hits of GENRE_KEYWORDS across
+    all cue texts; returns the genre with the most hits only when
+    that count is >= 2, otherwise None. Ties break in GENRE_KEYWORDS
+    order.
+    """
+    texts = [c.get("text", "").lower() for c in cues]
+    best_genre = None
+    best_hits = 0
+    for genre, keywords in GENRE_KEYWORDS.items():
+        hits = 0
+        for text in texts:
+            for kw in keywords:
+                hits += text.count(kw.lower())
+        if hits > best_hits:
+            best_hits = hits
+            best_genre = genre
+    if best_genre is not None and best_hits >= 2:
+        return best_genre
+    return None
 
 
 # ---------------------------------------------------------------- voiceover
@@ -496,7 +585,7 @@ export const theme: Theme = {{
 
 
 def render_timeline_md(title, scenes, total, theme, aspect, sfx_events,
-                       family=None, captions=None):
+                       family=None, captions=None, genre=None, sfx_theme=None):
     lines = [
         f"# Timeline — {title}",
         "",
@@ -510,6 +599,10 @@ def render_timeline_md(title, scenes, total, theme, aspect, sfx_events,
         lines.append(f"- **Family:** {family}")
     if captions is not None:
         lines.append(f"- **Captions:** {captions}")
+    if genre is not None:
+        lines.append(f"- **Genre:** {genre}")
+    if sfx_theme is not None:
+        lines.append(f"- **SFX theme:** {sfx_theme}")
     lines += [
         "",
         "| # | Start | End | Pipeline | Transition | Text |",
@@ -532,7 +625,7 @@ def render_timeline_md(title, scenes, total, theme, aspect, sfx_events,
 
 def render_project_readme(title, scenes, total, theme, aspect, sfx_events,
                           captions="word-by-word", family=None,
-                          voiceover_info=None):
+                          voiceover_info=None, genre=None, sfx_theme=None):
     # Voiceover section: detailed when a voiceover was supplied,
     # otherwise the original optional paragraph.
     if voiceover_info is not None:
@@ -573,6 +666,8 @@ def render_project_readme(title, scenes, total, theme, aspect, sfx_events,
             "in `src/timing.ts`, and preview with the `PreviewAudio` composition.\n"
         )
     family_line = f"- **Family:** {family}\n" if family is not None else ""
+    genre_line = f"- **Genre:** {genre}\n" if genre is not None else ""
+    sfx_theme_line = f"- **SFX theme:** {sfx_theme}\n" if sfx_theme is not None else ""
     return f'''# {title}
 
 A Remotion motion-graphics project generated by **zobvia**
@@ -581,7 +676,7 @@ A Remotion motion-graphics project generated by **zobvia**
 - **Scenes:** {len(scenes)} (one per SRT cue) — plan in `timeline.md`
 - **Duration:** {total:.1f} seconds @ {FPS} fps
 - **Aspect / size:** {aspect}
-{family_line}- **Captions:** {captions}
+{family_line}{genre_line}{sfx_theme_line}- **Captions:** {captions}
 - **Palette:** {theme["label"]} — bg `{theme["bg"]}`, accent `{theme["accent"]}`
 - **SFX:** {len(sfx_events)} generated events in `public/sfx/` (SFX only, no music)
 - **Data:** scenes live in `src/data/timeline.json`, sounds in `src/data/sfx.json`
@@ -677,7 +772,8 @@ def run_render(project_dir, width, height, total):
 
 def generate_project(out_dir, title, scenes, family, captions, total,
                      theme, aspect, width, height, sfx_events,
-                     voiceover_info=None, voiceover_src=None):
+                     voiceover_info=None, voiceover_src=None,
+                     genre="general", sfx_theme="soft"):
     """Write one project into out_dir. Raises OSError on write failure."""
     shutil.copytree(
         STARTER, out_dir, dirs_exist_ok=True,
@@ -691,6 +787,8 @@ def generate_project(out_dir, title, scenes, family, captions, total,
         "totalDuration": total,
         "family": family,
         "captions": captions,
+        "genre": genre,
+        "sfxTheme": sfx_theme,
         "scenes": scenes,
     }
     if voiceover_info is not None:
@@ -708,12 +806,14 @@ def generate_project(out_dir, title, scenes, family, captions, total,
         render_theme_ts(theme), encoding="utf-8")
     (out_dir / "timeline.md").write_text(
         render_timeline_md(title, scenes, total, theme, aspect, sfx_events,
-                           family=family, captions=captions),
+                           family=family, captions=captions, genre=genre,
+                           sfx_theme=sfx_theme),
         encoding="utf-8")
     (out_dir / "PROJECT_README.md").write_text(
         render_project_readme(title, scenes, total, theme, aspect, sfx_events,
                               captions=captions, family=family,
-                              voiceover_info=voiceover_info),
+                              voiceover_info=voiceover_info, genre=genre,
+                              sfx_theme=sfx_theme),
         encoding="utf-8")
     sfx_dir = out_dir / "public" / "sfx"
     sfx_dir.mkdir(parents=True, exist_ok=True)
@@ -756,21 +856,47 @@ def main(argv=None):
     aspect_group.add_argument("--aspects", default=None,
                               help="Comma-separated aspects, e.g. 16:9,9:16")
     p.add_argument("--title", default=None, help="Project title (default: SRT file stem)")
-    p.add_argument("--captions", default="word-by-word",
-                   help="Caption preset id (default: word-by-word)")
+    p.add_argument("--captions", default=None,
+                   help="Caption preset id (default: resolved from genre, else word-by-word)")
+    p.add_argument("--genre", default="general",
+                   help="Genre id (default: general)")
+    p.add_argument("--sfx-theme", default="soft", dest="sfx_theme",
+                   help="SFX theme: soft, cinematic or playful (default: soft)")
     p.add_argument("--voiceover", default=None,
                    help="Voiceover audio file (.mp3 or .wav)")
     p.add_argument("--render", action="store_true",
                    help="Render the first generated project after generation")
     args = p.parse_args(argv)
 
-    # --- captions validation (exit 2, listing valid ids) ---
-    if args.captions not in CAPTION_PRESETS:
+    # --- genre validation (exit 2, listing valid ids) ---
+    if args.genre not in GENRES:
+        print(
+            f"Error: invalid genre '{args.genre}'. "
+            f"Valid genres: {', '.join(GENRES)}",
+            file=sys.stderr)
+        return 2
+
+    # --- sfx theme validation (exit 2, listing valid ids) ---
+    if args.sfx_theme not in SFX_THEMES:
+        print(
+            f"Error: invalid sfx theme '{args.sfx_theme}'. "
+            f"Valid themes: {', '.join(SFX_THEMES)}",
+            file=sys.stderr)
+        return 2
+
+    # --- captions validation / resolution (exit 2, listing valid ids) ---
+    if args.captions is not None and args.captions not in CAPTION_PRESETS:
         print(
             f"Error: invalid captions preset '{args.captions}'. "
             f"Valid presets: {', '.join(CAPTION_PRESETS)}",
             file=sys.stderr)
         return 2
+    if args.captions is not None:
+        captions = args.captions
+    elif args.genre != "general":
+        captions = GENRE_CAPTION_DEFAULTS.get(args.genre, "word-by-word")
+    else:
+        captions = "word-by-word"
 
     # --- aspects validation / resolution ---
     if args.aspects is not None:
@@ -839,9 +965,15 @@ def main(argv=None):
             return 2
 
     title = args.title or srt_path.stem
-    scenes, family = plan_scenes(data["cues"])
+    scenes, family = plan_scenes(data["cues"], genre=args.genre)
     total = data["total_duration"]
-    sfx_events = plan_sfx(scenes)
+    sfx_events = plan_sfx(scenes, theme=args.sfx_theme)
+
+    # --- genre auto-suggest (only when genre is general; never auto-switch) ---
+    if args.genre == "general":
+        suggested = suggest_genre(data["cues"])
+        if suggested is not None:
+            print(f"Suggestion: this SRT looks like a '{suggested}' video — re-run with --genre {suggested} for its dedicated layout.")
 
     # --- voiceover probing / info (once) ---
     voiceover_info = None
@@ -873,9 +1005,10 @@ def main(argv=None):
         width, height = ASPECTS[aspect]
         try:
             generate_project(
-                out_dir, title, scenes, family, args.captions, total,
+                out_dir, title, scenes, family, captions, total,
                 theme, aspect, width, height, sfx_events,
-                voiceover_info=voiceover_info, voiceover_src=voiceover_src)
+                voiceover_info=voiceover_info, voiceover_src=voiceover_src,
+                genre=args.genre, sfx_theme=args.sfx_theme)
         except OSError as e:
             print(f"Error: cannot write project to {out_dir}: {e}", file=sys.stderr)
             return 2
@@ -884,7 +1017,9 @@ def main(argv=None):
         print(f"  Title:   {title}")
         print(f"  Scenes:  {len(scenes)} (one per SRT cue)")
         print(f"  Family:  {family}")
-        print(f"  Captions: {args.captions}")
+        print(f"  Genre:   {args.genre}")
+        print(f"  SFX theme: {args.sfx_theme}")
+        print(f"  Captions: {captions}")
         print(f"  Duration: {total:.1f}s @ {FPS} fps")
         print(f"  Aspect:  {aspect} ({width}x{height})")
         print(f"  Palette: {theme['label']} — bg {theme['bg']}, accent {theme['accent']}")

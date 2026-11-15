@@ -4,7 +4,7 @@ CREATE output is **SFX only — no music track, ever** (Hard Rule 8).
 Sound exists to punctuate visual events, not to fill silence. Voice
 ( if supplied as `public/voiceover.mp3`) and SFX are the whole mix.
 
-## The 7 sound types
+## The 12 sound types
 
 Durations are targets for the trimmed file; volumes are peak levels in
 the final mix relative to full scale, assuming voice peaks near
@@ -20,6 +20,11 @@ sounds must be trimmed/normalised to the same targets.
 | 5 | Chime | Two-note bell (fifth), bright, sparse use | 0.40–0.80 s | −20 to −17 dBFS |
 | 6 | Swipe | Faster, narrower whoosh, directional feel | 0.15–0.25 s | −19 to −15 dBFS |
 | 7 | Soft thud | Low sine + noise thump, grounded, no boom | 0.12–0.25 s | −17 to −13 dBFS |
+| 8 | Riser | Rising pitch sweep, tension builder, builds anticipation | 0.80 s | −20 to −16 dBFS |
+| 9 | Sparkle | Four bright notes cascading, magical twinkle | 0.50 s | −20 to −16 dBFS |
+| 10 | Ding | Clear bell tone, clean partials, notification-like | 0.60 s | −20 to −17 dBFS |
+| 11 | Shutter | Two crisp high-passed noise bursts, camera-like | 0.15 s | −18 to −14 dBFS |
+| 12 | Soft boom | Low sine drop with soft noise swell, cinematic weight, never harsh | 0.70 s | −17 to −13 dBFS |
 
 ## Event mapping
 
@@ -37,10 +42,15 @@ One sound family per event type, used consistently through the video:
 | Key reveal, final answer, section payoff | Chime |
 | Statement card slams in, before/after lands | Soft thud |
 | Button-like UI element activates | Crisp click |
+| Section change / big transition | Riser |
+| Light reveal / magic moment | Sparkle |
+| Notification / CTA button / reminder | Ding |
+| Photo change in a slideshow | Shutter |
+| Cinematic statement landing | Soft boom |
 
 If an event is not in this table, map it to the nearest row and record
-the choice in `out/timeline.md`. Do not introduce an 8th sound type
-mid-video.
+the choice in `out/timeline.md`. Do not introduce a 13th sound type
+mid-video — stick to the 12-type library above.
 
 ## Rules
 
@@ -63,6 +73,22 @@ mid-video.
   faded before the next event if they mask speech.
 - **Silence is allowed.** Not every cut needs a sound; un-scored cuts
   are what make scored moments register.
+
+## Sound design
+
+- **Peak-normalised generation.** Generated WAVs are peak-normalised
+  to −3 dBFS (peak 0.708) for consistent loudness across types, with
+  no clipping. The final mix master stays ≤ −1 dBFS.
+- **Voice-first rule.** SFX sit under the voice — they punctuate, they
+  never compete. Keep density at 5–7 events per 60 s, duck SFX under
+  speech where needed, and avoid masking speech frequencies or placing
+  a loud event over a key spoken word.
+- **Converter themes.** `scripts/create_video.py --sfx-theme` selects
+  one of three themes: **soft** (the default UI set — whoosh, thud,
+  pluck, chime with pop/click/swipe middles), **cinematic** (riser /
+  boom-soft / whoosh / thud weight for hooks and statements), and
+  **playful** (pop / sparkle / ding / pluck for light, energetic
+  videos).
 
 ## Sourcing free sounds
 
@@ -95,13 +121,9 @@ from the LEARN source video or any creator's content.
 per sound rather than hand-writing synthesis code:
 
 ```bash
-python scripts/sfx_gen.py --type pop    --out public/sfx/pop.mp3
-python scripts/sfx_gen.py --type whoosh --out public/sfx/whoosh.mp3 --duration 0.35
-python scripts/sfx_gen.py --type click  --out public/sfx/click.mp3
-python scripts/sfx_gen.py --type pluck  --out public/sfx/pluck.mp3 --note 660
-python scripts/sfx_gen.py --type thud   --out public/sfx/thud.mp3
-python scripts/sfx_gen.py --type swipe  --out public/sfx/swipe.mp3
-python scripts/sfx_gen.py --type chime  --out public/sfx/chime.mp3 --note 880
+python3 scripts/sfx_gen.py --out public/sfx
+python3 scripts/sfx_gen.py --out public/sfx --only pop,riser
+python3 scripts/sfx_gen.py --out public/sfx --only pop,click,whoosh,pluck,chime,swipe,thud,riser,sparkle,ding,shutter,boom-soft
 ```
 
 In Remotion, place sounds with `<Audio>` inside a `<Sequence>` whose

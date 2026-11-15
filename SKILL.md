@@ -238,6 +238,14 @@ Pick from the 16 in `references/style-pipelines.md`. Rules:
   pipelines are implemented as data-driven components in the starter,
   so any pipeline id the planner (or a hand-authored timeline) emits
   renders as-is.
+- **v1.3 expansion:** a 3D set (`cube-3d`, `flip-3d`, `parallax-3d` —
+  CSS 3D transforms in Remotion, not WebGL; stage-compatible) brings
+  the implemented total to 19 pipelines, and 8 genre scene types
+  (`news`, `podcast`, `product`, `slideshow`, `quote`, `tutorial`,
+  `scoreboard`, `lyrics`) are available via `--genre` (B5). Genre mode
+  replaces the middle scenes with the genre's component; the hook and
+  the Statement → Recap → CTA ending stay. Hand-authored timelines may
+  use any of these ids.
 - A learned style's recipe section overrides these defaults.
 
 ### B5 — Scaffold the project
@@ -273,7 +281,16 @@ copies a real voiceover into each project, probes its duration with
 ffprobe and warns when it drifts from the SRT by more than 1 s;
 `--render` runs install → render → `qc_check.py` on the first project
 and fails loudly, naming the step, if any step fails — never report a
-render that did not produce an MP4.
+render that did not produce an MP4. `--genre <id>` (v1.3) picks one of
+the 8 genre scene types for the middle scenes (`news`, `podcast`,
+`product`, `slideshow`, `quote`, `tutorial`, `scoreboard`, `lyrics`;
+default `general` = the family planner above) and applies the genre's
+default caption preset when `--captions` is not given (news →
+classic-bottom, lyrics → karaoke-highlight, podcast → boxed-bold);
+when no genre is given but the SRT strongly matches one, the converter
+only *suggests* it — it never switches silently. `--sfx-theme
+soft|cinematic|playful` (v1.3) selects which of the 12 SFX types voice
+the 5–7 events (B8).
 
 **Manual path:** copy `templates/remotion-starter/` yourself and shape
 it per `references/remotion-structure.md`: compositions `Main` and
@@ -303,8 +320,11 @@ conjunct test set checked before render. No exceptions.
 Follow `references/sfx-library.md`: SFX only, **no music track**,
 5–7 events per 60 s locked to visual events per its mapping table,
 generated or sourced per that reference and `scripts/sfx_gen.py`.
-Every SFX in the timeline (B3) must exist as a file in `public/sfx/`
-before rendering.
+The library has 12 procedurally generated types (v1.3: + riser,
+sparkle, ding, shutter, boom-soft), peak-normalised to −3 dBFS; the
+converter picks them by `--sfx-theme` (`soft` default, `cinematic`,
+`playful`). Every SFX in the timeline (B3) must exist as a file in
+`public/sfx/` before rendering.
 
 ### B9 — Asset matching
 

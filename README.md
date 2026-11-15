@@ -16,7 +16,7 @@
 `LEARN` — paste a video link, get a reusable **style skill** (pacing, cuts, captions, zooms, SFX — measured in numbers, not adjectives).
 `CREATE` — paste an SRT, get a polished **1920×1080 / 30 fps motion-graphics video project**. The skill asks you exactly **one question — which colour?** — and decides everything else like a professional editor.
 
-[Quick start](#-quick-start) · [Full video guide](#-how-to-make-a-video--the-complete-guide) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-183-named-items) · [Examples](examples/)
+[Quick start](#-quick-start) · [Full video guide](#-how-to-make-a-video--the-complete-guide) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-210-named-items) · [Examples](examples/)
 
 ![Zobvia — how it works](assets/demo.svg)
 
@@ -84,8 +84,8 @@ cp -r . ~/.claude/skills/zobvia   # or drop into a project's .claude/skills/
 
 - **Golden rule:** you are the DIRECTOR, the skill is the EDITOR. One question (colour, 6 options with hex + meaning, in your SRT's language). No second question. Ever.
 - **Timeline:** every SRT cue becomes a scene — timing comes from the SRT, content is never invented.
-- **16 style pipelines** (Glossy UI, Dark Tech, Bento Grid, Kinetic Typography, Data Dashboard…) with a proven 60–90 s recipe arc, max 2–3 styles per minute — **all 16 implemented as data-driven components** in the starter, plus coded transitions (cut / whip / slide / zoom / fade) and 6 caption presets.
-- **SFX only, no music:** 7 procedurally-generatable sound types (`scripts/sfx_gen.py`), 5–7 events per video, never masking the voice.
+- **19 style pipelines** (Glossy UI, Dark Tech, Bento Grid, Kinetic Typography, Data Dashboard…) with a proven 60–90 s recipe arc, max 2–3 styles per minute — the **16 core pipelines plus a v1.3 CSS-3D expansion set**, all implemented as data-driven components in the starter, plus 8 genre scene types, coded transitions (cut / whip / slide / zoom / fade) and 6 caption presets.
+- **SFX only, no music:** 12 procedurally-generatable sound types (`scripts/sfx_gen.py`), peak-normalised to −3 dBFS, 5–7 events per video in one of 3 sound themes, never masking the voice.
 - **Delivery:** Preview = project ZIP + `npm install` / `npx remotion studio` / `npx remotion render Main out/video.mp4`. Re-render = MP4 + ZIP.
 
 ## ⚡ One-command converter
@@ -98,6 +98,8 @@ python3 scripts/create_video.py --srt video.srt --palette tech --out my-video
 # options: --palette "#0EA5E9"  ·  --aspect 9:16  ·  --title "My Video"
 # pro:     --captions karaoke-highlight  ·  --aspects 16:9,9:16,1:1
 #          --voiceover voice.mp3  ·  --render
+# v1.3:    --genre news|podcast|product|slideshow|quote|tutorial|scoreboard|lyrics
+#          --sfx-theme soft|cinematic|playful
 ```
 
 What you get in `my-video/`:
@@ -127,7 +129,12 @@ translation — `classic-bottom`, `boxed-bold`, `minimal-line`).
 <file.mp3|wav>` copies your recording into the project, probes it with
 ffprobe, and warns if it drifts from the SRT by more than a second.
 `--render` goes all the way — install, render, QC-check — and fails
-loudly, naming the step, if anything goes wrong.
+loudly, naming the step, if anything goes wrong. `--genre <id>` (v1.3)
+builds the middle scenes with a dedicated genre component (next
+section) and applies its default caption preset; without it, a strong
+keyword match only prints a suggestion — the converter never switches
+silently. `--sfx-theme soft|cinematic|playful` (v1.3) picks which of
+the 12 sound types voice the events.
 
 The starter's `Main` composition is data-driven, so the generated
 project just works: `npm install`, `npx remotion studio`, done.
@@ -146,6 +153,40 @@ python3 scripts/qc_check.py --file out/video.mp4 --expect-width 1920 --expect-he
 installed it says so and exits 3 — it never invents a transcript.
 `qc_check.py` probes a render with ffprobe and PASS/FAILs each
 expectation you give it.
+
+## 🎭 More video types, 3D & sound v2
+
+**8 genre video types** (`--genre`) — dedicated data-driven scenes,
+with the hook and Statement → Recap → CTA ending kept:
+
+| Genre | Scene | Default captions |
+|---|---|---|
+| `news` | Banner strip + lower-third bar | classic-bottom |
+| `podcast` | Two speaker discs + live waveform bars | boxed-bold |
+| `product` | Hero panel + chips from the cue's own numbers/prices | word-by-word |
+| `slideshow` | Ken Burns pan/zoom photo-story panel | word-by-word |
+| `quote` | Big centred quote typography | word-by-word |
+| `tutorial` | Numbered step card with progress bar | word-by-word |
+| `scoreboard` | Sports scoreboard — numbers only from the cue | word-by-word |
+| `lyrics` | Big centred lines, karaoke-ready | karaoke-highlight |
+
+**3D set (CSS-3D in Remotion — not Three.js/WebGL):** `cube-3d`
+(rotating cube, the cue's chunks on its faces), `flip-3d` (card flip
+revealing the cue's second half), `parallax-3d` (three depth layers
+moving at different rates). Implemented pipelines: **19** (16 core +
+3 expansion), all registered in the starter's component map.
+
+**Animation kit** (`src/components/anim.tsx`): 8 reusable frame-driven
+helpers — FadeUp, SpringPop, BlurIn, CounterUp, DrawLine, ShineText,
+FloatY, GlitchSlice — grapheme-safe, exercised inside the new scenes.
+
+**Sound v2:** 12 procedural SFX types — the original 7 plus `riser`,
+`sparkle`, `ding`, `shutter`, `boom-soft` — with ADSR-style envelopes,
+harmonic content, and peak normalisation to **−3 dBFS** (no clipping,
+consistent loudness, verified by the test suite). Three themes via
+`--sfx-theme`: `soft` (default UI set), `cinematic` (riser /
+boom-soft / whoosh / thud), `playful` (pop / sparkle / ding / pluck).
+Still SFX only — no music, ever.
 
 ## 🎬 How to make a video — the complete guide
 
@@ -276,13 +317,16 @@ Most tools break Bengali. zobvia doesn't:
 - Latin tool names (*ChatGPT, Midjourney*) sized +4–6% inside Bengali lines
 - Full rules in [`references/bengali-text-rules.md`](references/bengali-text-rules.md), RTL + Devanagari in [`references/multilingual-typography.md`](references/multilingual-typography.md)
 
-## 📚 Capability index (183 named items)
+## 📚 Capability index (210 named items)
 
 | Library | Count | File |
 |---|---:|---|
-| Style pipelines | 16 | `references/style-pipelines.md` |
+| Style pipelines (16 core + 3 CSS-3D expansion) | 19 | `references/style-pipelines.md` |
 | Text + card animations & core transitions | 20 | `references/animation-library.md` |
-| SFX types (with code recipes) | 7 | `references/sfx-library.md` |
+| Animation kit helpers (coded, reusable) | 8 | `templates/remotion-starter/src/components/anim.tsx` |
+| Genre scene types (via `--genre`) | 8 | `references/genre-recipes.md` |
+| SFX types (with code recipes) | 12 | `references/sfx-library.md` |
+| SFX themes (soft / cinematic / playful) | 3 | `references/sfx-library.md` |
 | Caption presets | 14 | `references/captions-library.md` |
 | Extended transitions | 18 | `references/transitions-library.md` |
 | Camera moves | 14 | `references/camera-moves.md` |
@@ -304,7 +348,7 @@ client brief template, and freelancer pricing guidance (Bangladesh + internation
 This repo ships with a test suite — not claims:
 
 ```bash
-python3 -m unittest discover -s tests     # 27 tests: SRT, palettes, SFX WAVs, access gate, converter, transcribe, QC, planner/captions/aspects/voiceover/render
+python3 -m unittest discover -s tests     # 34 tests: SRT, palettes, SFX WAVs (12 types + peak levels), access gate, converter, transcribe, QC, planner/captions/aspects/voiceover/render, genre/SFX themes
 python3 scripts/check_tools.py            # honest tool report for your machine
 ```
 
@@ -320,9 +364,12 @@ family planner on a 24-cue SRT (5 stage pipelines in rotation, 83% hard cuts,
 ending trio intact), multi-aspect generation (16:9 / 9:16 / 1:1 dimensions),
 voiceover drift warning on a mismatched recording, `--render` failure
 reporting with stubbed tools (names the failing step, never fakes success),
-`qc_check.py` against a real ffmpeg-generated clip, and `tsc --noEmit` on both
-the Remotion starter (all 16 pipeline components) and a converter-generated
-project. A still-frame render requires direct access to Google Fonts from
+`qc_check.py` against a real ffmpeg-generated clip, all 12 SFX types'
+durations and peak levels (≤ −2.5 dBFS headroom, none silent), the
+v1.3 genre runs (news on the English example, podcast 9:16 on the
+Bengali example, cinematic SFX theme with riser + boom-soft placed),
+and `tsc --noEmit` on both the Remotion starter (all 19 pipeline +
+8 genre components) and a converter-generated project. A still-frame render requires direct access to Google Fonts from
 the rendering machine; see `CHANGELOG.md` for the exact verification log.
 
 ## 📁 Structure
@@ -333,7 +380,7 @@ zobvia/
 ├── references/               # 27 files — pipelines, captions, hooks, genres, platforms…
 ├── scripts/                  # extract · srt_parse · color_palette · create_video · sfx_gen · check_tools · style_stats · access_check · transcribe · qc_check · render_helper.sh
 ├── assets/                   # animated demo banner (demo.svg)
-├── templates/remotion-starter/  # working Remotion 4 project — data-driven Main + PreviewAudio, all 16 pipeline components, transitions, caption presets
+├── templates/remotion-starter/  # working Remotion 4 project — data-driven Main + PreviewAudio, 19 pipeline + 8 genre components, animation kit, transitions, caption presets
 ├── examples/                 # Bengali + English example SRTs → generated timeline + filled Dark Tech style skill + generated-project/ (real converter output)
 └── tests/                    # unittest suite for the scripts
 ```

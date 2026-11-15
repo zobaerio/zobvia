@@ -116,3 +116,44 @@ For a typical 60–90 s SRT (~25–40 cues), structure the whole video as:
 Shorter videos (< 30 s): hook + body + one statement card. Longer
 videos (> 90 s): repeat the body/payoff cycle per section, with a
 Statement Card as the chapter break between sections.
+
+## v1.3 expansion — the 3D set (CSS-3D)
+
+Three more pipelines, all in the Stage family. They are implemented
+with CSS 3D transforms inside Remotion (perspective, preserve-3d,
+translateZ) — not Three.js/WebGL. No new renderer, no WebGL canvas;
+the same deterministic, frame-driven rendering as every other
+pipeline, and stage-family compatible (pair them the way you would
+pair the 3D Carousel).
+
+17. **Cube 3D** (`cube-3d`) — *Look:* a rotating cube with
+    accent-tinted faces and accent edges, turning steadily in
+    perspective. *Layout:* one cube centre-stage (~400px at
+    1920 wide), the cue's chunks cycled across its six faces, the
+    full cue word-by-word underneath. *Best for:* one concept with
+    several facets, definitions that keep turning over, hooks that
+    need motion without a cut.
+18. **Flip Card 3D** (`flip-3d`) — *Look:* a single large card that
+    flips 0→180° in 3D and holds, front and back in theme surfaces.
+    *Layout:* one card centre-stage (~900×480 at 1920 wide); the
+    front carries the first half of the cue, the back the rest (a
+    single-chunk cue splits by words). *Best for:* question/answer,
+    term/meaning, problem/solution, myth/fact — any cue with a
+    natural two sides.
+19. **Parallax 3D** (`parallax-3d`) — *Look:* layered depth in a
+    gently tilting perspective stage — blurred accent circles at
+    the back, translucent chunk chips in the middle, big type at
+    the front, each layer drifting at its own rate (0.3× / 0.7× /
+    1.2×). *Layout:* full-stage layered composition, front text is
+    the whole cue word-by-word. *Best for:* introductions, mood-led
+    explainers, section openers where depth beats density.
+
+The implemented total is now 16 core + 3 expansion = 19 pipelines.
+
+Alongside the pipelines, v1.3 adds 8 genre scene types — news,
+podcast, product, slideshow, quote, tutorial, scoreboard, and
+lyrics — selected via `create_video.py --genre` rather than as
+free pipelines. Each genre scene is data-driven from the same SRT
+cues (banner + lower-third for news, speaker discs + waveform for
+podcast, hero panel + the cue's own number chips for product, and
+so on). See `references/genre-recipes.md` for the per-genre recipes.

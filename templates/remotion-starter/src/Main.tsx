@@ -17,6 +17,17 @@ import { MinimalCleanScene } from "./scenes/MinimalCleanScene";
 import { RecapGrid } from "./scenes/RecapGrid";
 import { StatementCard } from "./scenes/StatementCard";
 import { TimelineScene } from "./scenes/TimelineScene";
+import { CubeScene } from "./scenes/CubeScene";
+import { FlipCardScene } from "./scenes/FlipCardScene";
+import { ParallaxScene } from "./scenes/ParallaxScene";
+import { NewsScene } from "./scenes/NewsScene";
+import { PodcastScene } from "./scenes/PodcastScene";
+import { ProductScene } from "./scenes/ProductScene";
+import { SlideshowScene } from "./scenes/SlideshowScene";
+import { QuoteScene } from "./scenes/QuoteScene";
+import { TutorialScene } from "./scenes/TutorialScene";
+import { ScoreboardScene } from "./scenes/ScoreboardScene";
+import { LyricsScene } from "./scenes/LyricsScene";
 import { CaptionRenderer } from "./components/CaptionRenderer";
 import { SceneTransition } from "./components/transitions";
 import { timeline, type SceneProps } from "./data/timeline";
@@ -43,6 +54,17 @@ const PIPELINE_COMPONENTS: Record<string, React.FC<SceneProps>> = {
   "flat-vector": FlatVectorScene,
   "line-draw": LineDrawScene,
   cta: CTACard,
+  "cube-3d": CubeScene,
+  "flip-3d": FlipCardScene,
+  "parallax-3d": ParallaxScene,
+  news: NewsScene,
+  podcast: PodcastScene,
+  product: ProductScene,
+  slideshow: SlideshowScene,
+  quote: QuoteScene,
+  tutorial: TutorialScene,
+  scoreboard: ScoreboardScene,
+  lyrics: LyricsScene,
 };
 
 interface SfxEvent {

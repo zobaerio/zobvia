@@ -6,7 +6,9 @@ Covers: srt_parse (normal, Bengali, malformed, empty), color_palette
 access_check (password gate), create_video (SRT -> Remotion project),
 transcribe (honest no-backend degradation), qc_check (ffprobe checks),
 create_video v1.2 (family planner, transitions, captions, multi-aspect,
-voiceover drift, honest --render failure, demo timeline registration).
+voiceover drift, honest --render failure, demo timeline registration),
+v1.3 (12 SFX types + peak levels, --genre scenes + caption defaults,
+--sfx-theme, 3D/genre pipeline registration).
 """
 import json
 import subprocess
@@ -127,9 +129,11 @@ class TestColorPalette(unittest.TestCase):
 
 
 class TestSfxGen(unittest.TestCase):
-    EXPECTED = {  # name -> approx duration seconds
+    EXPECTED = {  # name -> approx duration seconds (12 types, v1.3)
         "pop": 0.12, "click": 0.06, "whoosh": 0.40, "pluck": 0.35,
         "chime": 0.40, "swipe": 0.30, "thud": 0.25,
+        "riser": 0.80, "sparkle": 0.50, "ding": 0.60,
+        "shutter": 0.15, "boom-soft": 0.70,
     }
 
     def test_wav_headers_and_durations(self):
@@ -151,6 +155,21 @@ class TestSfxGen(unittest.TestCase):
             run("sfx_gen.py", "--out", td, "--only", "pop")
             self.assertTrue((Path(td) / "pop.wav").exists())
             self.assertFalse((Path(td) / "click.wav").exists())
+
+    def test_peak_levels_normalised_not_silent(self):
+        # Sound v2: every WAV is peak-normalised to about -3 dBFS
+        # (<= 0.75 with headroom) and none is near-silent (> 0.1).
+        import struct
+        with tempfile.TemporaryDirectory() as td:
+            run("sfx_gen.py", "--out", td)
+            for name in self.EXPECTED:
+                f = Path(td) / f"{name}.wav"
+                with wave.open(str(f)) as w:
+                    raw = w.readframes(w.getnframes())
+                samples = struct.unpack(f"<{len(raw) // 2}h", raw)
+                peak = max(abs(s) for s in samples) / 32767
+                self.assertLessEqual(peak, 0.75, f"{name} peak {peak:.3f}")
+                self.assertGreater(peak, 0.1, f"{name} peak {peak:.3f}")
 
 
 class TestAccessCheck(unittest.TestCase):
@@ -478,6 +497,88 @@ class TestCreateVideoV12(unittest.TestCase):
             self.assertIn("remotion render", p.stderr)
             self.assertFalse(
                 (Path(td) / "proj" / "out" / "video.mp4").exists())
+
+    def test_v13_pipelines_registered(self):
+        starter = ROOT / "templates" / "remotion-starter"
+        main_tsx = (starter / "src" / "Main.tsx").read_text(encoding="utf-8")
+        for pid in ("cube-3d", "flip-3d", "parallax-3d",
+                    "news", "podcast", "product", "slideshow", "quote",
+                    "tutorial", "scoreboard", "lyrics"):
+            self.assertRegex(
+                main_tsx, rf'["\']?{pid}["\']?\s*:',
+                f"v1.3 pipeline {pid} not in Main map")
+
+
+class TestCreateVideoV13(unittest.TestCase):
+    def _timeline(self, out):
+        return json.loads(
+            (out / "src" / "data" / "timeline.json").read_text(encoding="utf-8"))
+
+    def _srt(self, td, text=SRT_OK):
+        srt = Path(td) / "in.srt"
+        srt.write_text(text, encoding="utf-8")
+        return srt
+
+    def test_genre_news_scenes_and_caption_default(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "proj"
+            run("create_video.py", "--srt", str(self._srt(td)),
+                "--palette", "tech", "--out", str(out), "--genre", "news")
+            timeline = self._timeline(out)
+            self.assertEqual(timeline["genre"], "news")
+            scenes = timeline["scenes"]
+            self.assertEqual(scenes[0]["pipeline"], "kinetic-hook")
+            self.assertEqual(scenes[1]["pipeline"], "news")
+            self.assertEqual(scenes[-1]["pipeline"], "cta")
+            # Genre default caption preset (news -> classic-bottom).
+            self.assertEqual(timeline["captions"], "classic-bottom")
+            readme = (out / "PROJECT_README.md").read_text(encoding="utf-8")
+            self.assertIn("news", readme)
+
+    def test_genre_invalid_errors(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = run("create_video.py", "--srt", str(self._srt(td)),
+                    "--palette", "tech", "--out", str(Path(td) / "x"),
+                    "--genre", "bogus-genre", expect=None)
+            self.assertEqual(p.returncode, 2)
+            self.assertIn("news", p.stderr)  # lists valid genre ids
+
+    def test_sfx_theme_cinematic(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "proj"
+            run("create_video.py", "--srt",
+                str(ROOT / "examples" / "example-bengali.srt"),
+                "--palette", "tech", "--out", str(out),
+                "--sfx-theme", "cinematic")
+            timeline = self._timeline(out)
+            self.assertEqual(timeline["sfxTheme"], "cinematic")
+            sfx = json.loads(
+                (out / "src" / "data" / "sfx.json").read_text(encoding="utf-8"))
+            sounds = {Path(e["file"]).stem for e in sfx["events"]}
+            self.assertTrue(sounds & {"riser", "boom-soft"},
+                            f"cinematic set missing from {sounds}")
+            for name in sounds:
+                self.assertTrue(
+                    (out / "public" / "sfx" / f"{name}.wav").is_file())
+
+    def test_sfx_theme_invalid_errors(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = run("create_video.py", "--srt", str(self._srt(td)),
+                    "--palette", "tech", "--out", str(Path(td) / "x"),
+                    "--sfx-theme", "loud", expect=None)
+            self.assertEqual(p.returncode, 2)
+            self.assertIn("cinematic", p.stderr)  # lists valid themes
+
+    def test_defaults_recorded(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "proj"
+            run("create_video.py", "--srt", str(self._srt(td)),
+                "--palette", "tech", "--out", str(out))
+            timeline = self._timeline(out)
+            self.assertEqual(timeline["genre"], "general")
+            self.assertEqual(timeline["sfxTheme"], "soft")
+            self.assertEqual(timeline["captions"], "word-by-word")
+
 
     def test_demo_timeline_pipelines_registered(self):
         starter = ROOT / "templates" / "remotion-starter"

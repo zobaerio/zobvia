@@ -44,3 +44,21 @@ export const truncateWords = (text: string, maxWords: number): string => {
 /** Grapheme count of a string (Bengali-safe length measure). */
 export const graphemeLength = (text: string): number =>
   splitGraphemes(text).length;
+
+/**
+ * Extract raw number / currency tokens from cue text.
+ *
+ * Uses the same regex family as DashboardScene (ASCII + Bengali
+ * digits, comma-grouped thousands, optional decimals and %), extended
+ * to keep an attached ৳ / $ sign (prefix or suffix) with its digits.
+ * Returns the exact substrings from the text — never invented numbers.
+ */
+export const extractNumbers = (text: string): string[] => {
+  const matches =
+    text.match(
+      /[৳$]?\s*[0-9০-৯]{1,3}(?:,[0-9০-৯]{3})+(?:\.[0-9০-৯]+)?%?|[৳$]?\s*[0-9০-৯]+(?:\.[0-9০-৯]+)?\s*[%৳$]?/g,
+    ) ?? [];
+  return matches
+    .map((token) => token.trim())
+    .filter((token) => /[0-9০-৯]/.test(token));
+};
