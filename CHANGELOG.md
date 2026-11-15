@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Access password gate** (owner's decision, 2026-11-15): installing or
+  first-running Zobvia asks for a password once per machine — the author's
+  GitHub username. Only its SHA-256 hash is stored (`scripts/access_check.py`,
+  gate in `install.sh`, rule in `SKILL.md`); a marker at
+  `~/.zobvia/access-ok` prevents repeat prompts. 3 new tests (15/15 total).
+- **README**: animated demo banner (`assets/demo.svg`, pure SVG/SMIL) and a
+  complete step-by-step "How to make a video" guide (install → SRT →
+  colour question → preview → changes → render), a Bengali quick guide,
+  and an FAQ. Fixed the clone URL to the real repo.
 - Renamed the skill from the working title `video-master` to **Zobvia**
   (owner's final name choice, 2026-11-15 — an original coinage from the
   author's name, verified unused by web search before adoption).

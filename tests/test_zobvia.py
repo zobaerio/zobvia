@@ -149,5 +149,45 @@ class TestSfxGen(unittest.TestCase):
             self.assertFalse((Path(td) / "click.wav").exists())
 
 
+class TestAccessCheck(unittest.TestCase):
+    def _load(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "access_check", SCRIPTS / "access_check.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_correct_password_matches(self):
+        mod = self._load()
+        self.assertTrue(mod.password_matches("zobaerio"))
+        self.assertTrue(mod.password_matches("  zobaerio  "))  # stripped
+
+    def test_wrong_password_rejected(self):
+        mod = self._load()
+        self.assertFalse(mod.password_matches("zobvia"))
+        self.assertFalse(mod.password_matches(""))
+        self.assertFalse(mod.password_matches("Zobaerio"))  # case-sensitive
+
+    def test_cli_status_and_verify(self):
+        import os
+        with tempfile.TemporaryDirectory() as td:
+            env = dict(os.environ, HOME=td)
+            p = subprocess.run(
+                [sys.executable, str(SCRIPTS / "access_check.py"), "--status"],
+                capture_output=True, text=True, env=env)
+            self.assertEqual(p.returncode, 3)  # locked in a fresh HOME
+            env["ZOBVIA_PASSWORD"] = "zobaerio"
+            p = subprocess.run(
+                [sys.executable, str(SCRIPTS / "access_check.py")],
+                capture_output=True, text=True, env=env)
+            self.assertEqual(p.returncode, 0)
+            self.assertTrue((Path(td) / ".zobvia" / "access-ok").exists())
+            p = subprocess.run(
+                [sys.executable, str(SCRIPTS / "access_check.py"), "--status"],
+                capture_output=True, text=True, env=env)
+            self.assertEqual(p.returncode, 0)  # now unlocked
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -15,7 +15,9 @@
 `LEARN` — paste a video link, get a reusable **style skill** (pacing, cuts, captions, zooms, SFX — measured in numbers, not adjectives).
 `CREATE` — paste an SRT, get a polished **1920×1080 / 30 fps motion-graphics video project**. The skill asks you exactly **one question — which colour?** — and decides everything else like a professional editor.
 
-[Quick start](#-quick-start) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-183-named-items) · [Examples](examples/)
+[Quick start](#-quick-start) · [Full video guide](#-how-to-make-a-video--the-complete-guide) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-183-named-items) · [Examples](examples/)
+
+![Zobvia — how it works](assets/demo.svg)
 
 </div>
 
@@ -38,11 +40,18 @@ flowchart LR
 ## 🚀 Quick start
 
 ```bash
-git clone https://github.com/<you>/zobvia.git
+git clone https://github.com/zobaerio/zobvia.git
 cd zobvia
-bash install.sh                 # checks tools, installs Python deps, guides you
+bash install.sh                 # asks the access password, checks tools, installs Python deps
 cp -r . ~/.claude/skills/zobvia   # or drop into a project's .claude/skills/
 ```
+
+> 🔐 **Access password:** the installer asks for a password once per machine.
+> The password is the author's GitHub username: **`zobaerio`**
+> Only a SHA-256 hash of it is stored in the code — the password itself is
+> never saved. After a successful install you won't be asked again on that
+> machine (marker: `~/.zobvia/access-ok`). Installing via the ZIP instead?
+> Claude will ask for the same password the first time the skill runs.
 
 **Learn a style:**
 > Watch https://youtube.com/watch?v=… and save it as `style-neon-edits`
@@ -76,6 +85,126 @@ cp -r . ~/.claude/skills/zobvia   # or drop into a project's .claude/skills/
 - **SFX only, no music:** 7 procedurally-generatable sound types (`scripts/sfx_gen.py`), 5–7 events per video, never masking the voice.
 - **Delivery:** Preview = project ZIP + `npm install` / `npx remotion studio` / `npx remotion render Main out/video.mp4`. Re-render = MP4 + ZIP.
 
+## 🎬 How to make a video — the complete guide
+
+Everything below is the whole workflow, start to finish. No editing
+experience needed: you supply words, Zobvia does the editing.
+
+### Step 0 — Install (once)
+
+1. Clone or download this repo (see Quick start above).
+2. Run `bash install.sh`. It asks for the **access password** — type
+   `zobaerio` — then checks your tools (Python, ffmpeg, Node) and tells
+   you exactly what to install if anything is missing.
+3. Copy the folder into your Claude skills directory
+   (`~/.claude/skills/zobvia`), or drop the ZIP into Claude's skill section.
+4. Open Claude and say: **"Make a motion graphics video from this SRT"** —
+   if this machine hasn't been unlocked yet, Claude asks for the access
+   password first (same one: `zobaerio`), verifies it, and never asks again.
+
+### Step 1 — Get an SRT file
+
+An SRT is a subtitle file: numbered blocks with timestamps and one or two
+lines of text each. Ways to get one:
+
+- **From a script you wrote:** paste your script to Claude and say
+  "turn this into an SRT" — or write it by hand following
+  [`examples/example-bengali.srt`](examples/example-bengali.srt).
+- **From a YouTube video:** download the captions (many free tools export
+  `.srt`), or let LEARN mode's transcription produce one.
+- **From a voiceover:** record your voice, and ask Claude to transcribe it
+  into a timed SRT (see `references/voiceover-workflow.md`).
+
+One SRT cue = one scene on screen, so keep cues to one idea each
+(roughly 1–2 lines, 2–5 seconds).
+
+### Step 2 — Paste the SRT and the prompt
+
+Paste your SRT into Claude with one line, or use the flagship
+[Master CREATE Prompt](references/master-create-prompt.md) verbatim:
+
+> Make a motion graphics video from this SRT: *(paste SRT)*
+
+That is all you have to write. Zobvia reads the whole SRT, understands the
+subject and tone, and plans the full timeline itself
+(`timeline.md` is generated before any code, so you can see the plan).
+
+### Step 3 — Answer ONE question: colour
+
+Zobvia asks exactly one question — **"কোন রঙ চান?" / "Which colour?"** —
+with 6 palettes (name, hex codes, and what mood each gives). Pick a number
+or a name. No other questions will be asked; pacing, styles, captions,
+zooms and SFX are decided by the skill like a professional editor.
+
+### Step 4 — Preview (default delivery)
+
+You receive a **project ZIP** plus three commands:
+
+```bash
+npm install
+npx remotion studio
+npx remotion render Main out/video.mp4
+```
+
+- `npm install` — one-time setup inside the unzipped project.
+- `npx remotion studio` — opens the video in your browser so you can
+  watch it, scrub through scenes, and check the Bengali text.
+- If you added a `voiceover.mp3` into the project's `public/` folder, the
+  **PreviewAudio** composition plays it; without it, the video is silent
+  except the built-in SFX.
+
+### Step 5 — Ask for changes (optional)
+
+Every delivery ends with **"কিছু সিন বদলাতে চান?"** ("Want any scene
+changed?"). Just say what to change in plain words:
+
+- "Make scene 3 slower" · "Change the caption style to Karaoke Highlight"
+- "Use my `style-neon-edits` for the whole video" · "Make a 9:16 version too"
+
+### Step 6 — Render the final video
+
+Say **"render"** and you get back:
+
+- 🎞️ `video.mp4` — 1920×1080, 30 fps, word-by-word animated captions,
+  5–7 soft SFX events, no music (unless you asked for a vertical version:
+  say "render 9:16" for Shorts/Reels/TikTok, 1080×1920).
+- 📦 the updated project ZIP + the same 3 commands.
+
+Say **"ZIP"** instead if you only want the project files without rendering.
+
+### Making a video in a learned style (LEARN → CREATE)
+
+1. **Learn:** "Watch *<video link>* and save it as `style-my-style`" —
+   Zobvia measures the video's pacing, cuts, captions, colours and SFX
+   and saves a reusable style skill (style only — never the creator's
+   footage, voice or music).
+2. **Create:** "Make a video from this SRT using `style-my-style`" —
+   your new video is edited in that measured style.
+
+### 🇧🇩 বাংলায় ঝটপট গাইড
+
+1. **ইনস্টল:** repo ডাউনলোড করে `bash install.sh` চালান — পাসওয়ার্ড চাইলে লিখুন `zobaerio`।
+2. **SRT দিন:** Claude-কে বলুন "এই SRT থেকে মোশন গ্রাফিক্স ভিডিও বানাও" আর SRT-টা paste করুন।
+3. **একটা প্রশ্নের উত্তর দিন:** "কোন রঙ চান?" — ৬টা রঙের মধ্যে একটা বেছে নিন। ব্যাস, আর কোনো প্রশ্ন নেই।
+4. **প্রিভিউ দেখুন:** ZIP আর ৩টা command পাবেন — `npx remotion studio` দিয়ে ব্রাউজারে ভিডিওটা দেখুন।
+5. **বদল চাইলে বলুন:** কোন সিন বদলাতে চান শুধু বললেই হবে।
+6. **ফাইনাল ভিডিও:** "render" বললেই `video.mp4` + ZIP হাতে পাবেন।
+
+### FAQ
+
+- **Do I need to know video editing?** No. You write the words (SRT) and
+  pick a colour. Everything else is the skill's job.
+- **Can it add music?** No — CREATE is SFX-only by design (5–7 soft UI
+  sounds per video), so the voice is never masked. Add your own music
+  afterwards if you want it.
+- **Bengali text breaks in other tools. Here?** Zobvia animates whole
+  syllables (graphemes), never splits conjuncts (ক্ষ, জ্ঞ, ষ্ণ),
+  uses `letterSpacing: 0` and Hind Siliguri — see the Bengali section below.
+- **Wrong password / new machine?** The password is always the author's
+  GitHub username, `zobaerio`. Each machine asks once.
+- **What if a tool is missing?** Run `python3 scripts/check_tools.py` —
+  it gives an honest report and the exact install command for your OS.
+
 ## 🇧🇩 Bengali, first class
 
 Most tools break Bengali. zobvia doesn't:
@@ -103,7 +232,7 @@ Most tools break Bengali. zobvia doesn't:
 | Colour tones (× 6 swatches, WCAG-checked) | 11 | `references/color-system.md` |
 | Platform specs (YT, Shorts, Reels, TikTok, FB, LinkedIn) | 7 | `references/platform-specs.md` |
 
-Plus: 27 reference files total, 7 working scripts, a compilable Remotion starter
+Plus: 27 reference files total, 8 working scripts, a compilable Remotion starter
 ([`templates/remotion-starter/`](templates/remotion-starter/)), voiceover workflow,
 licensing-safe music/SFX sourcing, export matrix, project workflow, QC checklist,
 client brief template, and freelancer pricing guidance (Bangladesh + international).
@@ -113,7 +242,7 @@ client brief template, and freelancer pricing guidance (Bangladesh + internation
 This repo ships with a test suite — not claims:
 
 ```bash
-python3 -m unittest discover -s tests     # 12 tests: SRT, palettes, SFX WAVs
+python3 -m unittest discover -s tests     # 15 tests: SRT, palettes, SFX WAVs, access gate
 python3 scripts/check_tools.py            # honest tool report for your machine
 ```
 
@@ -129,8 +258,9 @@ rendering machine; see `CHANGELOG.md` for the exact verification log.
 ```
 zobvia/
 ├── SKILL.md                  # the skill: routing, LEARN A0–A8, CREATE B0–B12, hard rules
-├── references/               # 26 files — pipelines, captions, hooks, genres, platforms…
-├── scripts/                  # extract · srt_parse · color_palette · sfx_gen · check_tools · style_stats
+├── references/               # 27 files — pipelines, captions, hooks, genres, platforms…
+├── scripts/                  # extract · srt_parse · color_palette · sfx_gen · check_tools · style_stats · access_check
+├── assets/                   # animated demo banner (demo.svg)
 ├── templates/remotion-starter/  # working Remotion 4 project (Main + PreviewAudio)
 ├── examples/                 # example SRT → generated timeline + filled Dark Tech style skill
 └── tests/                    # unittest suite for the scripts

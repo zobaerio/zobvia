@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <!-- Zobvia animated demo banner. Pure SVG + SMIL: an 8-second loop.
+       Each animation runs dur=8s with keyTimes marking when its element
+       appears inside the cycle, then holds until the loop restarts. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0A1929"/>
+      <stop offset="1" stop-color="#12294d"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#34d399"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <circle cx="1130" cy="90" r="180" fill="#22d3ee" opacity="0.08"/>
+  <circle cx="120" cy="650" r="150" fill="#34d399" opacity="0.07"/>
+
+  <!-- Title letters, staggered in -->
+  <g font-size="120" font-weight="800" fill="#ffffff" letter-spacing="6">
+    <text x="330" y="215" opacity="0">Z<animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.0125;0.0625;1" dur="8s" repeatCount="indefinite"/></text>
+    <text x="425" y="215" opacity="0">O<animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.0375;0.0875;1" dur="8s" repeatCount="indefinite"/></text>
+    <text x="520" y="215" opacity="0">B<animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.0625;0.1125;1" dur="8s" repeatCount="indefinite"/></text>
+    <text x="610" y="215" opacity="0">V<animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.0875;0.1375;1" dur="8s" repeatCount="indefinite"/></text>
+    <text x="700" y="215" opacity="0">I<animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.1125;0.1625;1" dur="8s" repeatCount="indefinite"/></text>
+    <text x="745" y="215" opacity="0">A<animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.1375;0.1875;1" dur="8s" repeatCount="indefinite"/></text>
+  </g>
+  <rect x="330" y="245" width="0" height="6" rx="3" fill="url(#accent)">
+    <animate attributeName="width" values="0;0;505;505" keyTimes="0;0.1625;0.2375;1" dur="8s" repeatCount="indefinite"/>
+  </rect>
+
+  <!-- Tagline -->
+  <text x="330" y="305" font-size="34" fill="#cbd5e1" opacity="0">
+    Learn any style. Create any video.
+    <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.225;0.2875;1" dur="8s" repeatCount="indefinite"/>
+  </text>
+
+  <!-- Three steps, appearing in sequence -->
+  <g font-size="30" font-weight="600">
+    <g opacity="0">
+      <rect x="180" y="380" width="920" height="64" rx="14" fill="#ffffff" opacity="0.07"/>
+      <text x="215" y="422" fill="#22d3ee">STEP 1 · LEARN</text>
+      <text x="480" y="422" fill="#e2e8f0" font-weight="400">Paste a video link → get a style skill</text>
+      <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.3;0.3625;1" dur="8s" repeatCount="indefinite"/>
+    </g>
+    <g opacity="0">
+      <rect x="180" y="462" width="920" height="64" rx="14" fill="#ffffff" opacity="0.07"/>
+      <text x="215" y="504" fill="#34d399">STEP 2 · CREATE</text>
+      <text x="480" y="504" fill="#e2e8f0" font-weight="400">Paste an SRT → answer ONE colour question</text>
+      <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.4;0.4625;1" dur="8s" repeatCount="indefinite"/>
+    </g>
+    <g opacity="0">
+      <rect x="180" y="544" width="920" height="64" rx="14" fill="#ffffff" opacity="0.07"/>
+      <text x="215" y="586" fill="#fbbf24">STEP 3 · RENDER</text>
+      <text x="480" y="586" fill="#e2e8f0" font-weight="400">Preview ZIP → say "render" → video.mp4</text>
+      <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.5;0.5625;1" dur="8s" repeatCount="indefinite"/>
+    </g>
+  </g>
+
+  <text x="640" y="680" font-size="22" fill="#94a3b8" text-anchor="middle" opacity="0">
+    1920×1080 · 30 fps · word-by-word captions · SFX only · Bengali-safe typography
+    <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.6;0.675;1" dur="8s" repeatCount="indefinite"/>
+  </text>
+</svg>

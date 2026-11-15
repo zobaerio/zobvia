@@ -25,6 +25,22 @@ and music are never reused.
   pacing, scenes, pipelines, animation, and SFX. The only decision it
   asks for is colour — exactly one question, never a second.
 
+## Access gate (run once per machine, before anything else)
+
+Zobvia is password-gated at install, by the author's decision. Before the
+first LEARN or CREATE run on a machine:
+
+1. Run `python3 scripts/access_check.py --status`.
+2. If it reports **unlocked**, proceed silently — never mention it again.
+3. If it reports **locked**, ask the user for the Zobvia access password
+   (this is an install-time gate, separate from CREATE's colour question),
+   then verify with `ZOBVIA_PASSWORD=<their answer> python3 scripts/access_check.py`.
+   On success the script writes a marker (`~/.zobvia/access-ok`) and the
+   user is never asked again on that machine.
+4. Never store, log, or repeat the plain password anywhere. Only its
+   SHA-256 hash exists in the code. The password is the author's GitHub
+   username — if the user asks what it is, tell them that.
+
 ## Mode routing
 
 | Input | Mode |
@@ -310,6 +326,10 @@ LEARN could not measure.
 8. SFX only in CREATE output. No music track, ever.
 9. One font family per video.
 10. Default delivery is Preview (ZIP + commands). Render only on request.
+11. Access gate first: on a machine where `scripts/access_check.py`
+    reports locked, verify the access password before any LEARN/CREATE
+    work (see "Access gate" above). Never bypass it, never store the
+    plain password.
 
 ## References index
 
