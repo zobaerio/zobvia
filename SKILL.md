@@ -209,6 +209,14 @@ Wait for the answer. The chosen palette follows
 ≥ 4.5:1). If the user has already stated a colour in their message,
 skip the question entirely — do not ask a question already answered.
 
+The chosen palette now also yields `accent2`/`accent3` companions
+(derived in `scripts/color_palette.py`, each contrast-ensured to
+≥ 4.5:1 WCAG AA against the tone's scene background): headline
+colour rotates accent → accent2 → accent3 across scenes, and keyword
+words (numbers, Latin terms, the first content word) take a companion
+accent. The user still answers only ONE colour question — the
+companions are derived, never asked.
+
 ### B3 — Timeline planning
 
 Write `out/timeline.md` before writing any code: **one cue = one
@@ -265,8 +273,8 @@ SRTs = Statement → Recap → CTA), resolves the palette through
 `scripts/color_palette.py` into `src/theme.ts`, writes
 `src/data/timeline.json` (scenes with pipelines + transitions, plus
 project-level `family` and `captions`), `timeline.md`,
-`src/data/sfx.json` plus the generated WAVs in `public/sfx/`, and a
-`PROJECT_README.md`. The starter's `Main` composition is data-driven:
+`src/data/sfx.json` (full-coverage plan, B8) plus the generated
+WAVs in `public/sfx/`, and a `PROJECT_README.md`. The starter's `Main` composition is data-driven:
 it builds Sequences from `timeline.json` and plays the SFX from
 `sfx.json` — so the generated project previews immediately. Customise
 the generated project afterwards only where the user's style or a
@@ -289,8 +297,8 @@ default caption preset when `--captions` is not given (news →
 classic-bottom, lyrics → karaoke-highlight, podcast → boxed-bold);
 when no genre is given but the SRT strongly matches one, the converter
 only *suggests* it — it never switches silently. `--sfx-theme
-soft|cinematic|playful` (v1.3) selects which of the 12 SFX types voice
-the 5–7 events (B8).
+soft|cinematic|playful` (v1.3) flavours the hook accent and the
+rotation for unlisted pipelines under the v1.4 coverage table (B8).
 
 **Manual path:** copy `templates/remotion-starter/` yourself and shape
 it per `references/remotion-structure.md`: compositions `Main` and
@@ -306,7 +314,8 @@ default; offset 3–6 frames between words). Within a cue, distribute
 word onsets evenly across the cue's duration unless word-level
 timestamps were supplied. Emphasis words (numbers, names, negations,
 the cue's key noun/verb) get the kinetic-emphasis treatment — sparingly,
-max 1–2 per cue.
+max 1–2 per cue. Keyword words get companion-accent colouring, and the
+karaoke preset's active word pops with a spring scale (~1.12x).
 
 ### B7 — Bengali rules
 
@@ -317,14 +326,18 @@ conjunct test set checked before render. No exceptions.
 
 ### B8 — SFX implementation
 
-Follow `references/sfx-library.md`: SFX only, **no music track**,
-5–7 events per 60 s locked to visual events per its mapping table,
-generated or sourced per that reference and `scripts/sfx_gen.py`.
-The library has 12 procedurally generated types (v1.3: + riser,
-sparkle, ding, shutter, boom-soft), peak-normalised to −3 dBFS; the
-converter picks them by `--sfx-theme` (`soft` default, `cinematic`,
-`playful`). Every SFX in the timeline (B3) must exist as a file in
-`public/sfx/` before rendering.
+Follow `references/sfx-library.md`: SFX only, **no music track**.
+v1.4 **FULL COVERAGE** is a hard expectation — every scene must carry
+its matched accent per the coverage table in
+`references/sfx-library.md`, every non-cut transition adds its
+whoosh-family entry sound, and colliding accents are offset +6 frames;
+a silent scene is a defect. Generated or sourced per that reference
+and `scripts/sfx_gen.py`. The library has 12 procedurally generated
+types (v1.3: + riser, sparkle, ding, shutter, boom-soft),
+peak-normalised to −3 dBFS; the converter's `--sfx-theme` (`soft`
+default, `cinematic`, `playful`) flavours the hook accent and the
+unlisted-pipeline rotation. Every SFX in the timeline (B3) must exist
+as a file in `public/sfx/` before rendering.
 
 ### B9 — Asset matching
 

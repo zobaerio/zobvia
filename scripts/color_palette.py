@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tone-based colour palettes with WCAG contrast validation."""
 import argparse
+import colorsys
 import json
 import math
 import sys
@@ -102,6 +103,27 @@ PALETTES = {
 DARK_BG = "#0A1929"
 LIGHT_BG = "#FFFFFF"
 
+# v1.4 multi-colour system: every tone gains two companion accents,
+# hand-picked to sit harmoniously with the tone's character (analogous
+# or triadic partners of the tone's primary accent). They are NOT raw
+# output — build() passes each candidate through ensure_contrast()
+# against the tone's scene background (its darkest swatch, the same
+# background create_video.resolve_palette picks), so accent2/accent3
+# always reach WCAG AA (>= 4.5:1) for text use.
+ACCENT_EXTRAS = {
+    "tech": ("#22D3EE", "#A78BFA"),      # cyan (analogous) + violet (triadic)
+    "calm": ("#A8DADC", "#F4A261"),      # pale teal + warm sand-orange
+    "urgent": ("#FBBF24", "#38BDF8"),    # bright amber + sky pop
+    "playful": ("#FDE68A", "#67E8F9"),   # soft yellow + bright cyan
+    "premium": ("#F59E0B", "#38BDF8"),   # bright gold + sky
+    "growth": ("#4ADE80", "#FACC15"),    # bright green + harvest yellow
+    "creative": ("#22D3EE", "#D946EF"),  # cyan spark + magenta statement
+    "minimal": ("#F59E0B", "#34D399"),   # restrained amber + mint
+    "dark": ("#22D3EE", "#C084FC"),      # cyan + light purple
+    "warm": ("#FBBF24", "#FB7185"),      # bright amber + coral
+    "cool": ("#2DD4BF", "#F472B6"),      # bright teal + pink pop
+}
+
 def hex_to_rgb(h):
     h = h.lstrip("#")
     return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
@@ -119,6 +141,53 @@ def contrast(hex1, hex2):
     hi, lo = max(l1, l2), min(l1, l2)
     return round((hi + 0.05) / (lo + 0.05), 2)
 
+def _to_hex(r, g, b):
+    return "#{:02X}{:02X}{:02X}".format(
+        max(0, min(255, round(r))), max(0, min(255, round(g))),
+        max(0, min(255, round(b))))
+
+def _mix(hex1, hex2, t):
+    """Blend hex1 toward hex2 by fraction t (0..1), per channel."""
+    a = [int(hex1.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    b = [int(hex2.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    return _to_hex(*[x + (y - x) * t for x, y in zip(a, b)])
+
+def ensure_contrast(hex_value, bg, minimum=4.5):
+    """Return hex_value adjusted until it reaches `minimum` vs bg.
+
+    Steps the colour toward whichever endpoint (white or black) can
+    reach the target against bg — lightening on dark backgrounds,
+    darkening on light ones — in 5% increments. For any background at
+    least one endpoint reaches 4.58:1, so this always terminates with
+    a passing colour; hue is preserved as far as the steps allow.
+    """
+    hex_value = hex_value.upper()
+    if contrast(hex_value, bg) >= minimum:
+        return hex_value
+    endpoint = ("#FFFFFF" if contrast("#FFFFFF", bg) >= contrast("#000000", bg)
+                else "#000000")
+    for step in range(1, 21):
+        cand = _mix(hex_value, endpoint, step * 0.05)
+        if contrast(cand, bg) >= minimum:
+            return cand
+    return endpoint
+
+def harmonious_companions(hex_value):
+    """(accent2, accent3) candidates for a custom accent colour.
+
+    Hue rotations in HLS space: +36 degrees (analogous) and +150
+    degrees (near-triadic), keeping lightness and saturation. Callers
+    pass the results through ensure_contrast() against the real
+    background before using them as text colours.
+    """
+    r, g, b = hex_to_rgb(hex_value)
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    out = []
+    for shift in (36.0 / 360.0, 150.0 / 360.0):
+        rr, gg, bb = colorsys.hls_to_rgb((h + shift) % 1.0, l, s)
+        out.append(_to_hex(rr * 255, gg * 255, bb * 255))
+    return out[0], out[1]
+
 def build(tone, subject=None):
     items = []
     for s in PALETTES[tone]:
@@ -129,7 +198,17 @@ def build(tone, subject=None):
             "wcag_aa_on_dark": contrast(s["hex"], DARK_BG) >= 4.5,
             "wcag_aa_on_light": contrast(s["hex"], LIGHT_BG) >= 4.5,
         })
-    return {"tone": tone, "subject": subject, "dark_background": DARK_BG, "light_background": LIGHT_BG, "swatches": items}
+    # Scene background for this tone = its darkest swatch (the same
+    # background create_video.resolve_palette selects).
+    scene_bg = min(
+        PALETTES[tone],
+        key=lambda s: luminance(hex_to_rgb(s["hex"])))["hex"]
+    accent2_cand, accent3_cand = ACCENT_EXTRAS[tone]
+    return {"tone": tone, "subject": subject, "dark_background": DARK_BG,
+            "light_background": LIGHT_BG, "swatches": items,
+            "scene_background": scene_bg,
+            "accent2": ensure_contrast(accent2_cand, scene_bg),
+            "accent3": ensure_contrast(accent3_cand, scene_bg)}
 
 def to_markdown(data):
     lines = [f"# Colour Palette — {data['tone'].title()}", ""]
@@ -146,6 +225,10 @@ def to_text(data):
     lines = [f"Palette: {data['tone']}" + (f" — {data['subject']}" if data.get("subject") else "")]
     for s in data["swatches"]:
         lines.append(f"  {s['name']:<16} {s['hex']}  dark {s['contrast_on_dark']}:1  light {s['contrast_on_light']}:1  — {s['meaning']}")
+    if "accent2" in data:
+        bg = data["scene_background"]
+        lines.append(f"  Accent 2         {data['accent2']}  on scene bg {bg} {contrast(data['accent2'], bg)}:1  — companion accent (v1.4)")
+        lines.append(f"  Accent 3         {data['accent3']}  on scene bg {bg} {contrast(data['accent3'], bg)}:1  — companion accent (v1.4)")
     return "\n".join(lines)
 
 def main(argv=None):

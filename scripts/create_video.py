@@ -42,9 +42,11 @@ What it does (deterministically — same input, same plan):
      "captions", "genre" and "sfxTheme", plus "voiceover" when
      --voiceover is given),
      src/theme.ts (palette resolved through color_palette.py,
-     WCAG-checked), timeline.md (with a Transition column),
-     public/sfx/*.wav + src/data/sfx.json (5-7 SFX events at scene
-     boundaries, generated with sfx_gen.py's generators), and
+     WCAG-checked, including the v1.4 accent2/accent3 companions),
+     timeline.md (with a Transition column),
+     public/sfx/*.wav + src/data/sfx.json (full-coverage SFX: one
+     matched accent per scene plus a whoosh-family sound on every
+     non-cut transition, generated with sfx_gen.py's generators), and
      PROJECT_README.md with the 3 delivery commands.
 
 Extra flags:
@@ -64,8 +66,9 @@ Extra flags:
       omitted / "general", a keyword-based suggestion may be printed
       (never auto-applied).
   --sfx-theme <theme>     One of: soft (default), cinematic, playful.
-      Invalid -> exit 2. Selects the role/middle SFX maps used by
-      plan_sfx. Recorded as "sfxTheme" in timeline.json.
+      Invalid -> exit 2. Flavours the hook accent and the rotation
+      used for pipelines without a fixed accent in plan_sfx's
+      coverage table. Recorded as "sfxTheme" in timeline.json.
   --aspect / --aspects    Mutually exclusive. --aspect keeps the
       single-project output at --out itself (effective default 16:9).
       --aspects takes a comma-separated subset of 16:9,9:16,1:1 and
@@ -159,21 +162,69 @@ CAPTION_PRESETS = [
     "minimal-line",
 ]
 
-# SFX locked to scene roles (see references/sfx-library.md mapping).
+# SFX coverage (v1.4) — every scene gets a matched sound; see the
+# coverage table in references/sfx-library.md. Two layers per scene:
+# a transition sound at the scene entry (whoosh family, driven by the
+# scene's transition type) and a scene-entry accent chosen by pipeline.
+# Pipelines not in ACCENT_SFX rotate the theme's middle set.
 SFX_THEMES = ["soft", "cinematic", "playful"]
-THEME_ROLE_SFX = {
-    "soft": {HOOK: "whoosh", STATEMENT: "thud", RECAP: "pluck", CTA: "chime"},
-    "cinematic": {HOOK: "riser", STATEMENT: "boom-soft", RECAP: "thud", CTA: "chime"},
-    "playful": {HOOK: "sparkle", STATEMENT: "pop", RECAP: "pluck", CTA: "ding"},
-}
 THEME_MIDDLE_SFX = {
     "soft": ["pop", "click", "swipe"],
     "cinematic": ["whoosh", "riser", "thud"],
     "playful": ["pop", "ding", "sparkle"],
 }
-# Backwards-compatible aliases for the default (soft) theme.
-ROLE_SFX = THEME_ROLE_SFX["soft"]
+# Backwards-compatible alias for the default (soft) theme.
 MIDDLE_SFX = THEME_MIDDLE_SFX["soft"]
+
+# Transition type -> entry sound (cut / none add no transition sound;
+# the scene accent below still plays, so no scene is ever silent).
+TRANSITION_SFX = {
+    "whip": "swipe",
+    "zoom": "riser",
+    "slide": "whoosh",
+    "fade": "swipe",
+}
+
+# Pipeline id -> scene-entry accent sound.
+ACCENT_SFX = {
+    "glass-cards": "pop",
+    "bento": "pop",
+    "flip-3d": "pop",
+    "carousel-3d": "whoosh",
+    "cube-3d": "whoosh",
+    "parallax-3d": "whoosh",
+    "dashboard": "ding",
+    "scoreboard": "ding",
+    "news": "ding",
+    "statement": "thud",
+    "quote": "thud",
+    "tutorial": "click",
+    "slideshow": "shutter",
+    "lyrics": "pluck",
+    "podcast": "pluck",
+    "recap": "sparkle",
+    "cta": "chime",
+}
+
+# The hook's accent is the one theme-flavoured slot in the table.
+HOOK_SFX_BY_THEME = {
+    "soft": "pop",
+    "cinematic": "boom-soft",
+    "playful": "sparkle",
+}
+
+# Target durations (seconds) of the 12 generated types — mirrors
+# scripts/sfx_gen.py; written into sfx.json so the Remotion side can
+# give each <Audio> sequence its full length instead of a fixed cap.
+SOUND_DURATIONS = {
+    "pop": 0.12, "click": 0.06, "whoosh": 0.40, "pluck": 0.35,
+    "chime": 0.40, "swipe": 0.30, "thud": 0.25, "riser": 0.80,
+    "sparkle": 0.50, "ding": 0.60, "shutter": 0.15, "boom-soft": 0.70,
+}
+
+# When a transition sound and the scene accent would land on the same
+# frame, the accent is offset by this many frames.
+ACCENT_OFFSET_FRAMES = 6
 
 GENRES = ["general", "news", "podcast", "product", "slideshow", "quote",
           "tutorial", "scoreboard", "lyrics"]
@@ -243,10 +294,13 @@ def resolve_palette(spec):
             raise ValueError(
                 f"malformed hex colour '{spec}' — expected #RRGGBB, e.g. #0EA5E9")
         bg = color_palette.DARK_BG
+        accent2_cand, accent3_cand = color_palette.harmonious_companions(hex_value)
         return {
             "bg": bg,
             "fg": _pick_text(bg),
             "accent": hex_value,
+            "accent2": color_palette.ensure_contrast(accent2_cand, bg),
+            "accent3": color_palette.ensure_contrast(accent3_cand, bg),
             "accentSoft": _rgba(hex_value, 0.14),
             "muted": _pick_muted(bg),
             "label": f"custom accent {hex_value}",
@@ -293,6 +347,11 @@ def resolve_palette(spec):
         "bg": bg,
         "fg": fg,
         "accent": accent,
+        # v1.4 multi-colour system: companions precomputed per tone in
+        # color_palette.build(), already WCAG-ensured against this bg
+        # (build's scene_background is the same darkest-swatch pick).
+        "accent2": data["accent2"],
+        "accent3": data["accent3"],
         "accentSoft": _rgba(accent, 0.14),
         "muted": muted,
         "label": f"tone '{tone}'",
@@ -432,60 +491,58 @@ def plan_scenes(cues, genre="general"):
 
 
 def plan_sfx(scenes, theme="soft"):
-    """5-7 SFX events at scene boundaries (midpoints top up short SRTs).
+    """Full-coverage SFX plan (v1.4): no scene is ever silent.
 
-    Role mapping is pipeline-based and theme-dependent (see
-    THEME_ROLE_SFX / THEME_MIDDLE_SFX): for the default "soft" theme,
-    hook -> whoosh, statement -> thud, recap -> pluck, cta -> chime,
-    middle scenes rotate pop/click/swipe. Boundary events are taken
-    in priority order (hook, statement, recap, cta, then middles in
-    scene order) up to 7; if fewer than 5 boundaries exist, scene
-    midpoints are added until 5 events exist.
+    Every scene gets exactly ONE scene-entry accent chosen by its
+    pipeline (ACCENT_SFX; the hook's accent is theme-flavoured via
+    HOOK_SFX_BY_THEME; unlisted pipelines rotate the theme's middle
+    set). The CTA's accent is the final chime. On top of that, every
+    non-cut transition adds its whoosh-family entry sound
+    (TRANSITION_SFX) at the scene's first frame; when that would
+    collide with the scene's accent, the accent is offset by
+    ACCENT_OFFSET_FRAMES frames so both are heard distinctly.
+
+    Total events = scenes + (number of non-cut transitions). The
+    10-cue Bengali example (9 cuts + 1 slide) therefore yields
+    10 + 1 = 11 events, with every scene index covered.
     """
-    if theme not in THEME_ROLE_SFX:
+    if theme not in THEME_MIDDLE_SFX:
         raise ValueError(
             f"unknown sfx theme '{theme}'. Valid themes: {', '.join(SFX_THEMES)}")
-    role_sfx = THEME_ROLE_SFX[theme]
     middle_sfx = THEME_MIDDLE_SFX[theme]
-    by_role = {}
-    for pos, scene in enumerate(scenes):
-        by_role.setdefault(scene["pipeline"], []).append(pos)
 
-    def sound_for(pos):
-        pipeline = scenes[pos]["pipeline"]
-        if pipeline in role_sfx:
-            return role_sfx[pipeline]
-        middle_pos = [p for p, s in enumerate(scenes)
-                      if s["pipeline"] not in role_sfx]
-        return middle_sfx[middle_pos.index(pos) % len(middle_sfx)]
+    def make_event(sound, at_seconds, scene, kind):
+        return {
+            "file": f"sfx/{sound}.wav",
+            "sound": sound,
+            "atSeconds": round(at_seconds, 3),
+            "sceneIndex": scene["index"],
+            "scene": scene["index"],
+            "durationSeconds": SOUND_DURATIONS[sound],
+            "kind": kind,
+        }
 
-    priority = []
-    for role in (HOOK, STATEMENT, RECAP, CTA):
-        priority.extend(by_role.get(role, []))
-    priority.extend(p for p, s in enumerate(scenes)
-                    if s["pipeline"] not in role_sfx)
-    chosen = sorted(priority[:7])
-
-    events = [{
-        "file": f"sfx/{sound_for(pos)}.wav",
-        "sound": sound_for(pos),
-        "atSeconds": scenes[pos]["start"],
-        "sceneIndex": scenes[pos]["index"],
-    } for pos in chosen]
-
-    pos = 0
-    while len(events) < 5 and pos < len(scenes):
-        scene = scenes[pos]
-        mid = round((scene["start"] + scene["end"]) / 2, 3)
-        if all(abs(e["atSeconds"] - mid) > 0.05 for e in events):
-            events.append({
-                "file": f"sfx/{sound_for(pos)}.wav",
-                "sound": sound_for(pos),
-                "atSeconds": mid,
-                "sceneIndex": scene["index"],
-            })
-        pos += 1
-    events.sort(key=lambda e: e["atSeconds"])
+    events = []
+    unlisted = 0
+    for scene in scenes:
+        pipeline = scene["pipeline"]
+        if pipeline == HOOK:
+            accent = HOOK_SFX_BY_THEME[theme]
+        elif pipeline in ACCENT_SFX:
+            accent = ACCENT_SFX[pipeline]
+        else:
+            accent = middle_sfx[unlisted % len(middle_sfx)]
+            unlisted += 1
+        start = scene["start"]
+        transition_sound = TRANSITION_SFX.get(scene.get("transition"))
+        accent_at = start
+        if transition_sound is not None:
+            events.append(
+                make_event(transition_sound, start, scene, "transition"))
+            accent_at = start + ACCENT_OFFSET_FRAMES / FPS
+        events.append(make_event(accent, accent_at, scene, "accent"))
+    events.sort(key=lambda e: (e["atSeconds"],
+                               0 if e["kind"] == "transition" else 1))
     return events
 
 
@@ -549,9 +606,12 @@ def probe_voiceover_duration(path):
 def render_theme_ts(theme):
     fg_ratio = color_palette.contrast(theme["fg"], theme["bg"])
     accent_ratio = color_palette.contrast(theme["accent"], theme["bg"])
+    accent2_ratio = color_palette.contrast(theme["accent2"], theme["bg"])
+    accent3_ratio = color_palette.contrast(theme["accent3"], theme["bg"])
     return f'''/**
  * theme.ts — generated by zobvia scripts/create_video.py
- * Palette: {theme["label"]} (WCAG: fg on bg = {fg_ratio}:1, accent on bg = {accent_ratio}:1).
+ * Palette: {theme["label"]} (WCAG: fg on bg = {fg_ratio}:1, accent on bg = {accent_ratio}:1,
+ * accent2 on bg = {accent2_ratio}:1, accent3 on bg = {accent3_ratio}:1).
  * Regenerate by re-running create_video.py, or edit the values directly.
  */
 export interface Theme {{
@@ -561,6 +621,10 @@ export interface Theme {{
   fg: string;
   /** The ONE accent colour for this video (CREATE mode asks only this). */
   accent: string;
+  /** Companion accent 2 (v1.4 multi-colour system, WCAG AA on bg). */
+  accent2: string;
+  /** Companion accent 3 (v1.4 multi-colour system, WCAG AA on bg). */
+  accent3: string;
   /** Low-opacity tint of the accent, for tiles / chips / bar fills. */
   accentSoft: string;
   /** Secondary / de-emphasised text. */
@@ -575,12 +639,31 @@ export const theme: Theme = {{
   bg: "{theme["bg"]}",
   fg: "{theme["fg"]}",
   accent: "{theme["accent"]}",
+  accent2: "{theme["accent2"]}",
+  accent3: "{theme["accent3"]}",
   accentSoft: "{theme["accentSoft"]}",
   muted: "{theme["muted"]}",
   font: "Hind Siliguri",
   radius: 24,
   gap: 28,
 }};
+
+/**
+ * v1.4 multi-colour system: the headline colour rotates through the
+ * three accents by scene position (0-based), so consecutive scenes do
+ * not all wear the same colour. Body text always stays theme.fg.
+ * Consumed by SceneShell (kicker + counter chip) and WordByWord
+ * (headline base colour, via SceneMetaContext).
+ */
+export const SCENE_ACCENTS: string[] = [
+  theme.accent,
+  theme.accent2,
+  theme.accent3,
+];
+
+export const sceneAccent = (index: number): string =>
+  SCENE_ACCENTS[((index % SCENE_ACCENTS.length) + SCENE_ACCENTS.length) %
+    SCENE_ACCENTS.length];
 '''
 
 
@@ -592,8 +675,8 @@ def render_timeline_md(title, scenes, total, theme, aspect, sfx_events,
         f"- **Scenes:** {len(scenes)} (one per SRT cue)",
         f"- **Total duration:** {total:.3f} seconds @ {FPS} fps",
         f"- **Aspect:** {aspect}",
-        f"- **Palette:** {theme['label']} — bg `{theme['bg']}`, accent `{theme['accent']}`",
-        f"- **SFX events:** {len(sfx_events)} (SFX only, no music)",
+        f"- **Palette:** {theme['label']} — bg `{theme['bg']}`, accent `{theme['accent']}`, accent2 `{theme['accent2']}`, accent3 `{theme['accent3']}`",
+        f"- **SFX events:** {len(sfx_events)} — {len(scenes)} scenes → {len(sfx_events)} SFX events, every scene covered (SFX only, no music)",
     ]
     if family is not None:
         lines.append(f"- **Family:** {family}")
@@ -615,10 +698,12 @@ def render_timeline_md(title, scenes, total, theme, aspect, sfx_events,
             f"{srt_parse.fmt_time(s['end'])} | {s['pipeline']} | "
             f"{s.get('transition', 'cut')} | {text} |")
     lines += ["", "## SFX map", "",
-              "| At | File | Scene |", "|----|------|-------|"]
+              "| At | Sound | Kind | File | Scene |",
+              "|----|-------|------|------|-------|"]
     for e in sfx_events:
         lines.append(
-            f"| {srt_parse.fmt_time(e['atSeconds'])} | `public/{e['file']}` | {e['sceneIndex']} |")
+            f"| {srt_parse.fmt_time(e['atSeconds'])} | {e['sound']} | "
+            f"{e['kind']} | `public/{e['file']}` | {e['sceneIndex']} |")
     lines.append("")
     return "\n".join(lines)
 
@@ -677,8 +762,8 @@ A Remotion motion-graphics project generated by **zobvia**
 - **Duration:** {total:.1f} seconds @ {FPS} fps
 - **Aspect / size:** {aspect}
 {family_line}{genre_line}{sfx_theme_line}- **Captions:** {captions}
-- **Palette:** {theme["label"]} — bg `{theme["bg"]}`, accent `{theme["accent"]}`
-- **SFX:** {len(sfx_events)} generated events in `public/sfx/` (SFX only, no music)
+- **Palette:** {theme["label"]} — bg `{theme["bg"]}`, accent `{theme["accent"]}`, accent2 `{theme["accent2"]}`, accent3 `{theme["accent3"]}`
+- **SFX:** {len(sfx_events)} generated events in `public/sfx/` — {len(scenes)} scenes → {len(sfx_events)} SFX events, every scene covered (SFX only, no music)
 - **Data:** scenes live in `src/data/timeline.json`, sounds in `src/data/sfx.json`
 
 ## Run it
@@ -798,8 +883,10 @@ def generate_project(out_dir, title, scenes, family, captions, total,
         encoding="utf-8")
     (out_dir / "src" / "data" / "sfx.json").write_text(
         json.dumps({"events": [
-            {"file": e["file"], "atSeconds": e["atSeconds"],
-             "sceneIndex": e["sceneIndex"]} for e in sfx_events]},
+            {"file": e["file"], "sound": e["sound"],
+             "atSeconds": e["atSeconds"], "sceneIndex": e["sceneIndex"],
+             "scene": e["scene"], "durationSeconds": e["durationSeconds"],
+             "kind": e["kind"]} for e in sfx_events]},
             ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8")
     (out_dir / "src" / "theme.ts").write_text(
@@ -1023,7 +1110,8 @@ def main(argv=None):
         print(f"  Duration: {total:.1f}s @ {FPS} fps")
         print(f"  Aspect:  {aspect} ({width}x{height})")
         print(f"  Palette: {theme['label']} — bg {theme['bg']}, accent {theme['accent']}")
-        print(f"  SFX:     {len(sfx_events)} events "
+        print(f"  SFX:     {len(sfx_events)} events — {len(scenes)} scenes "
+              f"covered, no silent scenes "
               f"({', '.join(sorted({e['sound'] for e in sfx_events}))})")
         if voiceover_info is not None:
             vo_dur = voiceover_info["durationSeconds"]

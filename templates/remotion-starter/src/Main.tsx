@@ -29,6 +29,8 @@ import { TutorialScene } from "./scenes/TutorialScene";
 import { ScoreboardScene } from "./scenes/ScoreboardScene";
 import { LyricsScene } from "./scenes/LyricsScene";
 import { CaptionRenderer } from "./components/CaptionRenderer";
+import { ProgressBar } from "./components/ProgressBar";
+import { SceneMetaContext } from "./components/SceneShell";
 import { SceneTransition } from "./components/transitions";
 import { timeline, type SceneProps } from "./data/timeline";
 import rawSfx from "./data/sfx.json";
@@ -69,8 +71,12 @@ const PIPELINE_COMPONENTS: Record<string, React.FC<SceneProps>> = {
 
 interface SfxEvent {
   file: string;
+  sound?: string;
   atSeconds: number;
   sceneIndex: number;
+  /** v1.4: full sound length so long sounds (riser, ding…) play whole. */
+  durationSeconds?: number;
+  kind?: string;
 }
 
 const sfxEvents: SfxEvent[] = (
@@ -98,7 +104,7 @@ export const Main: React.FC = () => {
     <AbsoluteFill
       style={{ backgroundColor: theme.bg, fontFamily: theme.font }}
     >
-      {timeline.scenes.map((scene) => {
+      {timeline.scenes.map((scene, position) => {
         const Scene = PIPELINE_COMPONENTS[scene.pipeline] ?? StatementCard;
         const durationInFrames = Math.max(
           1,
@@ -112,7 +118,11 @@ export const Main: React.FC = () => {
             name={`${scene.index}-${scene.pipeline}`}
           >
             <SceneTransition type={scene.transition}>
-              <Scene scene={scene} allScenes={timeline.scenes} />
+              <SceneMetaContext.Provider
+                value={{ position, total: timeline.scenes.length }}
+              >
+                <Scene scene={scene} allScenes={timeline.scenes} />
+              </SceneMetaContext.Provider>
             </SceneTransition>
             <CaptionRenderer
               text={scene.text}
@@ -126,12 +136,15 @@ export const Main: React.FC = () => {
         <Sequence
           key={`sfx-${i}`}
           from={Math.round(event.atSeconds * fps)}
-          durationInFrames={Math.round(0.5 * fps)}
+          durationInFrames={
+            Math.ceil((event.durationSeconds ?? 0.5) * fps) + 2
+          }
           name={event.file}
         >
           <Audio src={staticFile(event.file)} />
         </Sequence>
       ))}
+      <ProgressBar />
     </AbsoluteFill>
   );
 };

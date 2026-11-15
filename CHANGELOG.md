@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.0 — 2026-11-15
+
+Multi-colour text, full-coverage sound, and an interactivity layer — every scene now carries colour and sound, with no scene left silent or single-accent.
+
+### Added
+- **Multi-colour text system.** `scripts/color_palette.py` gives every tone `accent2` + `accent3` companions (analogous/triadic picks), each passed through `ensure_contrast()` so it is ≥ 4.5:1 WCAG AA against the tone's scene background (darkest swatch); custom `#hex` accents get hue-rotated companions (+36°, +150°), also contrast-ensured. `theme.ts` (starter + generated) carries `accent2`/`accent3`. Headline colour rotates [accent, accent2, accent3] by scene position via a `sceneAccent()` helper in `theme.ts`, consumed through a `SceneMetaContext` (provided by `Main.tsx`) by `SceneShell` (kicker colour) and `WordByWord` (headline base colour). Body text stays `fg`.
+- **Keyword colouring.** In `WordByWord` and the karaoke-highlight caption preset, "important" words — containing a number (ASCII or Bengali digits), Latin-script words (brands/terms), and the first content word of the cue — get the companion accent (`accent2`; in `WordByWord` the next accent in the scene rotation). Grapheme-safe, `letterSpacing: 0`. Karaoke's active word keeps the primary accent and now gets a spring scale pop (~1.12x with overshoot) instead of a static scale.
+- **Full SFX coverage.** `create_video.py` `plan_sfx` now sounds every scene: each scene gets exactly one scene-entry accent by pipeline (hook = theme-flavoured soft pop / cinematic boom-soft / playful sparkle; glass-cards/bento/flip-3d = pop; carousel-3d/cube-3d/parallax-3d = whoosh; dashboard/scoreboard/news = ding; statement/quote = thud; tutorial = click; slideshow = shutter; lyrics/podcast = pluck; recap = sparkle; cta = chime), unlisted pipelines rotate the theme's middle set, and every non-cut transition adds a whoosh-family entry sound (whip→swipe, zoom→riser, slide→whoosh, fade→swipe). When a transition sound and the accent collide at a scene's first frame, the accent is offset +6 frames. Total events = scenes + non-cut transitions; the 10-cue Bengali example yields 11 events with every scene covered. `sfx.json` events now carry `file`, `sound`, `atSeconds`, `sceneIndex`, `scene`, `durationSeconds`, `kind` (`accent`|`transition`); `Main.tsx` sizes each SFX sequence from `durationSeconds` so long sounds (riser 0.8s, ding 0.6s, boom-soft 0.7s) are no longer truncated by the old fixed 0.5s cap. `timeline.md` and `PROJECT_README.md` report "N scenes → M SFX events, every scene covered".
+- **Interactivity layer.** ProgressBar component (Main-level): 6px bottom track, accent→accent2→accent3 gradient fill across the whole video, a dot at each scene boundary; captions sit above it (bottom offset 64*scale), no collision. Scene counter chip "N / total" top-right inside `SceneShell`, low opacity (0.55), `accentSoft` pill.
+
+### Changed
+- `plan_sfx` replaces the old 5–7-event role plan with the full-coverage mapping above; the `references/sfx-library.md` density rule (5–7 per 60 s) now scopes to extra within-scene hits in hand-authored timelines only.
+- Honest note: for the playful tone (mid-purple scene background) the WCAG guarantee forces its companion accents to very dark shades — contrast-valid, hue-shifted; all other tones keep bright companions.
+- Tests: 34 → **38**; named capability items: 210 → **216** (+6 = multi-colour accent system, keyword colouring, karaoke spring pop, full-coverage SFX mapping, progress bar, scene counter chip). SFX types unchanged at 12.
+
 ## 1.3.0 — 2026-11-15
 
 More video kinds, a 3D set, an animation kit, and sound v2.

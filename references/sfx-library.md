@@ -52,13 +52,70 @@ If an event is not in this table, map it to the nearest row and record
 the choice in `out/timeline.md`. Do not introduce a 13th sound type
 mid-video — stick to the 12-type library above.
 
+## Coverage table (converter, v1.4)
+
+The converter (`scripts/create_video.py` `plan_sfx`) builds SFX in two
+layers, and **every scene is covered**:
+
+1. **Scene accent** — every scene gets exactly ONE scene-entry accent,
+   matched to its pipeline (table below).
+2. **Transition sound** — every non-cut transition adds a whoosh-family
+   entry sound on top of the accent.
+
+Transition → sound:
+
+| Transition | Sound |
+|---|---|
+| whip | swipe |
+| zoom | riser |
+| slide | whoosh |
+| fade | swipe |
+
+Cut transitions add no transition sound (the scene accent still plays).
+
+Pipeline → accent:
+
+| Pipeline(s) | Accent |
+|---|---|
+| hook | theme-flavoured (see below) |
+| glass-cards, bento, flip-3d | pop |
+| carousel-3d, cube-3d, parallax-3d | whoosh |
+| dashboard, scoreboard, news | ding |
+| statement, quote | thud |
+| tutorial | click |
+| slideshow | shutter |
+| lyrics, podcast | pluck |
+| recap | sparkle |
+| cta | chime (the final chime) |
+
+Hook accent by `--sfx-theme`: **soft** → pop, **cinematic** →
+boom-soft, **playful** → sparkle.
+
+Pipelines not listed above rotate the theme's middle set: **soft** —
+pop / click / swipe; **cinematic** — whoosh / riser / thud;
+**playful** — pop / ding / sparkle.
+
+**Collision rule:** when a transition sound and the accent collide at
+a scene's first frame, the accent is offset **+6 frames**.
+
+**Total:** events = scenes + non-cut transitions. The 10-cue Bengali
+example yields **11 events with every scene covered**.
+`sfx.json` events carry `file`, `sound`, `atSeconds`, `sceneIndex`,
+`scene`, `durationSeconds`, and `kind` (`accent` | `transition`);
+`timeline.md` and `PROJECT_README.md` report "N scenes → M SFX
+events, every scene covered".
+
 ## Rules
 
 - **No music.** No background track, no bed, no loop — even at low
   volume. If the user supplies music, decline that asset and note it;
   the rule has no exceptions.
-- **Density: 5–7 SFX events per 60 s.** Fewer feels empty; more feels
-  like a cartoon. Count events in the timeline before rendering.
+- **Density:** converter output follows the coverage table above —
+  every scene is sounded with its matched accent (plus a transition
+  sound on every non-cut transition); that full coverage is the v1.4
+  rule. The older 5–7 SFX events per 60 s density guidance now applies
+  only to EXTRA within-scene hits in hand-authored timelines. Count
+  events in the timeline before rendering.
 - **Same sound = same event.** A pop always means the same class of
   thing. Variation is allowed only as ±10% playback-rate/volume jitter
   so repeats do not sound machine-identical.
@@ -71,8 +128,10 @@ mid-video — stick to the 12-type library above.
 - **One SFX at a time** except a deliberate transition+landing pair
   (swipe into thud). Overlapping tails of long sounds (chime) must be
   faded before the next event if they mask speech.
-- **Silence is allowed.** Not every cut needs a sound; un-scored cuts
-  are what make scored moments register.
+- **Silence is allowed.** In converter output no scene is silent —
+  each scene carries its accent (see the coverage table). Silence
+  remains a tool only inside hand-authored scenes, between events:
+  un-scored moments are what make scored moments register.
 
 ## Sound design
 
@@ -80,15 +139,18 @@ mid-video — stick to the 12-type library above.
   to −3 dBFS (peak 0.708) for consistent loudness across types, with
   no clipping. The final mix master stays ≤ −1 dBFS.
 - **Voice-first rule.** SFX sit under the voice — they punctuate, they
-  never compete. Keep density at 5–7 events per 60 s, duck SFX under
-  speech where needed, and avoid masking speech frequencies or placing
-  a loud event over a key spoken word.
+  never compete. Converter output follows the coverage table above
+  (one accent per scene plus transition sounds); beyond that plan,
+  add no extra hits over speech, duck SFX under speech where needed,
+  and avoid masking speech frequencies or placing a loud event over
+  a key spoken word.
 - **Converter themes.** `scripts/create_video.py --sfx-theme` selects
-  one of three themes: **soft** (the default UI set — whoosh, thud,
-  pluck, chime with pop/click/swipe middles), **cinematic** (riser /
-  boom-soft / whoosh / thud weight for hooks and statements), and
-  **playful** (pop / sparkle / ding / pluck for light, energetic
-  videos).
+  one of three themes (**soft**, **cinematic**, **playful**). Under
+  the v1.4 coverage table above, themes flavour the hook accent
+  (soft → pop, cinematic → boom-soft, playful → sparkle) and the
+  rotation for unlisted pipelines (soft pop/click/swipe, cinematic
+  whoosh/riser/thud, playful pop/ding/sparkle); they do not change
+  which scenes are sounded — every scene is covered in every theme.
 
 ## Sourcing free sounds
 

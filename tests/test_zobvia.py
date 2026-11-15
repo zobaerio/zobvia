@@ -8,7 +8,9 @@ transcribe (honest no-backend degradation), qc_check (ffprobe checks),
 create_video v1.2 (family planner, transitions, captions, multi-aspect,
 voiceover drift, honest --render failure, demo timeline registration),
 v1.3 (12 SFX types + peak levels, --genre scenes + caption defaults,
---sfx-theme, 3D/genre pipeline registration).
+--sfx-theme, 3D/genre pipeline registration),
+v1.4 (accent2/accent3 WCAG companions, full SFX coverage — every scene
+sounded, multi-colour + interactivity layer in the starter source).
 """
 import json
 import subprocess
@@ -244,8 +246,11 @@ class TestCreateVideo(unittest.TestCase):
             self.assertGreaterEqual(len(wavs), 1)
             sfx = json.loads(
                 (out / "src" / "data" / "sfx.json").read_text(encoding="utf-8"))
-            self.assertGreaterEqual(len(sfx["events"]), 5)
-            self.assertLessEqual(len(sfx["events"]), 7)
+            # v1.4 full coverage: 10 scene accents + 1 slide-transition
+            # sound = 11 events, every scene sounded.
+            self.assertEqual(len(sfx["events"]), 11)
+            self.assertEqual({ev["sceneIndex"] for ev in sfx["events"]},
+                             set(range(1, 11)))
             for ev in sfx["events"]:
                 self.assertLessEqual(ev["atSeconds"], timeline["totalDuration"])
                 self.assertTrue((out / "public" / ev["file"]).is_file())
@@ -591,6 +596,121 @@ class TestCreateVideoV13(unittest.TestCase):
             self.assertRegex(
                 main_tsx, rf'["\']?{pid}["\']?\s*:',
                 f"demo pipeline {pid} not in Main map")
+
+
+class TestCreateVideoV14(unittest.TestCase):
+    def _load_palette_module(self):
+        sys.path.insert(0, str(SCRIPTS))
+        try:
+            import color_palette
+            return color_palette
+        finally:
+            sys.path.remove(str(SCRIPTS))
+
+    def test_palette_tones_expose_wcag_accents(self):
+        cp = self._load_palette_module()
+        for tone in cp.PALETTES:
+            data = cp.build(tone)
+            self.assertIn("accent2", data, tone)
+            self.assertIn("accent3", data, tone)
+            # The tone's scene background = its darkest swatch (the
+            # same pick create_video.resolve_palette makes).
+            bg = min(
+                cp.PALETTES[tone],
+                key=lambda s: cp.luminance(cp.hex_to_rgb(s["hex"])))["hex"]
+            self.assertEqual(data["scene_background"], bg, tone)
+            self.assertGreaterEqual(
+                cp.contrast(data["accent2"], bg), 4.5,
+                f"{tone} accent2 {data['accent2']} on {bg}")
+            self.assertGreaterEqual(
+                cp.contrast(data["accent3"], bg), 4.5,
+                f"{tone} accent3 {data['accent3']} on {bg}")
+            self.assertNotEqual(data["accent2"], data["accent3"], tone)
+
+    def test_generated_theme_carries_accents(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "proj"
+            run("create_video.py", "--srt",
+                str(ROOT / "examples" / "example-bengali.srt"),
+                "--palette", "creative", "--out", str(out))
+            theme = (out / "src" / "theme.ts").read_text(encoding="utf-8")
+            # creative companions, WCAG-ensured in color_palette.build.
+            self.assertIn('accent2: "#22D3EE"', theme)
+            self.assertIn('accent3: "#D946EF"', theme)
+
+    def test_sfx_full_coverage_bengali(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "proj"
+            run("create_video.py", "--srt",
+                str(ROOT / "examples" / "example-bengali.srt"),
+                "--palette", "tech", "--out", str(out))
+            sfx = json.loads(
+                (out / "src" / "data" / "sfx.json").read_text(encoding="utf-8"))
+            events = sfx["events"]
+            # 10 scenes -> 10 accents + 1 slide-transition sound = 11.
+            self.assertEqual(len(events), 11)
+            # Every scene index 1..10 appears among the event refs.
+            self.assertEqual({e["sceneIndex"] for e in events},
+                             set(range(1, 11)))
+            for e in events:
+                self.assertEqual(e["scene"], e["sceneIndex"])
+                self.assertIn(e["kind"], ("accent", "transition"))
+                self.assertGreater(e["durationSeconds"], 0)
+            by_scene = {}
+            for e in events:
+                by_scene.setdefault(e["sceneIndex"], []).append(e)
+            # Exactly one accent per scene — no silent scenes.
+            for idx in range(1, 11):
+                accents = [e for e in by_scene[idx] if e["kind"] == "accent"]
+                self.assertEqual(len(accents), 1, f"scene {idx}")
+            # CTA (scene 10) closes with the final chime; the soft-theme
+            # hook accent is a pop; scene 6's slide adds a whoosh and
+            # its accent is offset by 6 frames (0.2 s).
+            self.assertEqual(by_scene[10][0]["sound"], "chime")
+            self.assertEqual(by_scene[1][0]["sound"], "pop")
+            kinds6 = {e["kind"]: e for e in by_scene[6]}
+            self.assertEqual(kinds6["transition"]["sound"], "whoosh")
+            self.assertAlmostEqual(
+                kinds6["accent"]["atSeconds"]
+                - kinds6["transition"]["atSeconds"], 0.2, places=2)
+            # Docs report the coverage.
+            timeline_md = (out / "timeline.md").read_text(encoding="utf-8")
+            self.assertIn("10 scenes → 11 SFX events, every scene covered",
+                          timeline_md)
+            readme = (out / "PROJECT_README.md").read_text(encoding="utf-8")
+            self.assertIn("every scene covered", readme)
+
+    def test_starter_colour_and_interactivity_source(self):
+        starter = ROOT / "templates" / "remotion-starter" / "src"
+        word = (starter / "components" / "WordByWord.tsx").read_text(
+            encoding="utf-8")
+        # Keyword colouring rule + scene-accent rotation are in code.
+        self.assertIn("keywordIndices", word)
+        self.assertIn("accent2", word)
+        self.assertIn("sceneAccent", word)
+        self.assertIn("09E6", word)  # Bengali digit range in the rule
+        captions = (starter / "components" / "CaptionRenderer.tsx").read_text(
+            encoding="utf-8")
+        self.assertIn("accent2", captions)  # karaoke keyword colour
+        self.assertIn("spring", captions)   # karaoke scale pop
+        shell = (starter / "components" / "SceneShell.tsx").read_text(
+            encoding="utf-8")
+        self.assertIn("SceneMetaContext", shell)
+        self.assertIn("sceneAccent", shell)
+        self.assertIn("{meta.position + 1} / {meta.total}", shell)
+        main = (starter / "Main.tsx").read_text(encoding="utf-8")
+        self.assertIn("ProgressBar", main)
+        self.assertIn("SceneMetaContext.Provider", main)
+        self.assertIn("durationSeconds", main)  # no fixed SFX cap
+        bar = starter / "components" / "ProgressBar.tsx"
+        self.assertTrue(bar.is_file())
+        bar_src = bar.read_text(encoding="utf-8")
+        self.assertIn("linear-gradient", bar_src)
+        self.assertIn("accent3", bar_src)
+        theme = (starter / "theme.ts").read_text(encoding="utf-8")
+        self.assertIn("accent2", theme)
+        self.assertIn("accent3", theme)
+        self.assertIn("sceneAccent", theme)
 
 
 if __name__ == "__main__":

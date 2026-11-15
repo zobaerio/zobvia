@@ -1,6 +1,12 @@
 import React from "react";
-import { interpolate, useCurrentFrame, useVideoConfig } from "remotion";
+import {
+  interpolate,
+  spring,
+  useCurrentFrame,
+  useVideoConfig,
+} from "remotion";
 import { theme } from "../theme";
+import { keywordIndices } from "./WordByWord";
 
 /**
  * CaptionRenderer — caption overlay for a scene, from captions-library.
@@ -30,7 +36,7 @@ export const CaptionRenderer: React.FC<CaptionRendererProps> = ({
   durationInFrames,
 }) => {
   const frame = useCurrentFrame();
-  const { width } = useVideoConfig();
+  const { width, fps } = useVideoConfig();
   const s = width / 1920;
 
   const words = text.split(/\s+/).filter(Boolean);
@@ -65,6 +71,21 @@ export const CaptionRenderer: React.FC<CaptionRendererProps> = ({
 
   switch (preset) {
     case "karaoke-highlight": {
+      // v1.4: keyword words (numbers, Latin terms, first content word)
+      // wear accent2 even when not active; the active word keeps the
+      // primary accent and gets a spring scale pop (overshoot to
+      // ~1.12x, then settle) instead of a static scale.
+      const keywords = keywordIndices(words);
+      const pop =
+        activeIndex >= 0
+          ? spring({
+              frame: frame - onset(activeIndex),
+              fps,
+              config: { damping: 11, stiffness: 220, mass: 0.55 },
+              durationInFrames: 14,
+            })
+          : 0;
+      const activeScale = 1 + 0.12 * pop;
       return (
         <div style={wrapperStyle}>
           <div
@@ -82,9 +103,16 @@ export const CaptionRenderer: React.FC<CaptionRendererProps> = ({
                 <span
                   style={{
                     display: "inline-block",
-                    color: i === activeIndex ? theme.accent : theme.fg,
+                    color:
+                      i === activeIndex
+                        ? theme.accent
+                        : keywords.has(i)
+                          ? theme.accent2
+                          : theme.fg,
                     transform:
-                      i === activeIndex ? "scale(1.12)" : "scale(1)",
+                      i === activeIndex
+                        ? `scale(${activeScale})`
+                        : "scale(1)",
                   }}
                 >
                   {word}

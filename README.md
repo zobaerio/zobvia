@@ -16,7 +16,7 @@
 `LEARN` — paste a video link, get a reusable **style skill** (pacing, cuts, captions, zooms, SFX — measured in numbers, not adjectives).
 `CREATE` — paste an SRT, get a polished **1920×1080 / 30 fps motion-graphics video project**. The skill asks you exactly **one question — which colour?** — and decides everything else like a professional editor.
 
-[Quick start](#-quick-start) · [Full video guide](#-how-to-make-a-video--the-complete-guide) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-210-named-items) · [Examples](examples/)
+[Quick start](#-quick-start) · [Full video guide](#-how-to-make-a-video--the-complete-guide) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-216-named-items) · [Examples](examples/)
 
 ![Zobvia — how it works](assets/demo.svg)
 
@@ -85,7 +85,7 @@ cp -r . ~/.claude/skills/zobvia   # or drop into a project's .claude/skills/
 - **Golden rule:** you are the DIRECTOR, the skill is the EDITOR. One question (colour, 6 options with hex + meaning, in your SRT's language). No second question. Ever.
 - **Timeline:** every SRT cue becomes a scene — timing comes from the SRT, content is never invented.
 - **19 style pipelines** (Glossy UI, Dark Tech, Bento Grid, Kinetic Typography, Data Dashboard…) with a proven 60–90 s recipe arc, max 2–3 styles per minute — the **16 core pipelines plus a v1.3 CSS-3D expansion set**, all implemented as data-driven components in the starter, plus 8 genre scene types, coded transitions (cut / whip / slide / zoom / fade) and 6 caption presets.
-- **SFX only, no music:** 12 procedurally-generatable sound types (`scripts/sfx_gen.py`), peak-normalised to −3 dBFS, 5–7 events per video in one of 3 sound themes, never masking the voice.
+- **SFX only, no music:** 12 procedurally-generatable sound types (`scripts/sfx_gen.py`), peak-normalised to −3 dBFS, a matched sound on every scene in one of 3 sound themes, never masking the voice.
 - **Delivery:** Preview = project ZIP + `npm install` / `npx remotion studio` / `npx remotion render Main out/video.mp4`. Re-render = MP4 + ZIP.
 
 ## ⚡ One-command converter
@@ -116,8 +116,9 @@ What you get in `my-video/`:
   fade sparingly — and the project carries a `captions` preset
 - `src/theme.ts` — your palette, resolved and WCAG-checked
 - `timeline.md` — the human-readable plan (scene table + SFX map)
-- `public/sfx/*.wav` + `src/data/sfx.json` — 5–7 generated SFX events,
-  wired into the composition (SFX only, no music)
+- `public/sfx/*.wav` + `src/data/sfx.json` — full-coverage generated
+  SFX events (a matched sound on every scene), wired into the
+  composition (SFX only, no music)
 - `PROJECT_README.md` — what was generated + the 3 run commands
 
 **Pro flags:** `--captions <id>` picks one of 6 implemented caption
@@ -187,6 +188,13 @@ consistent loudness, verified by the test suite). Three themes via
 `--sfx-theme`: `soft` (default UI set), `cinematic` (riser /
 boom-soft / whoosh / thud), `playful` (pop / sparkle / ding / pluck).
 Still SFX only — no music, ever.
+
+## 🌈 v1.4 — Multi-colour text, full-coverage sound, interactivity
+
+- **Multi-colour text system:** every tone now yields `accent2`/`accent3` companions (analogous/triadic picks, each contrast-ensured to ≥ 4.5:1 WCAG AA against the scene background; custom `#hex` accents get hue-rotated companions at +36°/+150°). Headline colour rotates accent → accent2 → accent3 across scenes via a `sceneAccent()` helper; body text stays `fg`.
+- **Keyword colouring + karaoke pop:** "important" words — numbers (ASCII or Bengali digits), Latin-script words (brands/terms), and the first content word of the cue — get a companion accent (grapheme-safe, `letterSpacing: 0`). Karaoke's active word keeps the primary accent and now pops with a spring scale (~1.12x with overshoot) instead of a static scale.
+- **Full SFX coverage:** every scene gets exactly one matched scene-entry accent by pipeline, and every non-cut transition adds a whoosh-family entry sound (colliding accents offset +6 frames) — total = scenes + non-cut transitions. The 10-cue Bengali example yields **11 SFX events, every scene covered**. Long sounds are no longer truncated: each SFX sequence is sized from its `durationSeconds`.
+- **Interactivity layer:** a ProgressBar runs across the whole video (6px bottom track, accent→accent2→accent3 gradient fill, a dot at each scene boundary; captions sit above it), plus a low-opacity scene counter chip "N / total" top-right in every scene.
 
 ## 🎬 How to make a video — the complete guide
 
@@ -269,8 +277,8 @@ changed?"). Just say what to change in plain words:
 Say **"render"** and you get back:
 
 - 🎞️ `video.mp4` — 1920×1080, 30 fps, word-by-word animated captions,
-  5–7 soft SFX events, no music (unless you asked for a vertical version:
-  say "render 9:16" for Shorts/Reels/TikTok, 1080×1920).
+  a matched sound on every scene, no music (unless you asked for a
+  vertical version: say "render 9:16" for Shorts/Reels/TikTok, 1080×1920).
 - 📦 the updated project ZIP + the same 3 commands.
 
 Say **"ZIP"** instead if you only want the project files without rendering.
@@ -297,9 +305,9 @@ Say **"ZIP"** instead if you only want the project files without rendering.
 
 - **Do I need to know video editing?** No. You write the words (SRT) and
   pick a colour. Everything else is the skill's job.
-- **Can it add music?** No — CREATE is SFX-only by design (5–7 soft UI
-  sounds per video), so the voice is never masked. Add your own music
-  afterwards if you want it.
+- **Can it add music?** No — CREATE is SFX-only by design (a matched
+  sound on every scene, SFX only), so the voice is never masked. Add
+  your own music afterwards if you want it.
 - **Bengali text breaks in other tools. Here?** Zobvia animates whole
   syllables (graphemes), never splits conjuncts (ক্ষ, জ্ঞ, ষ্ণ),
   uses `letterSpacing: 0` and Hind Siliguri — see the Bengali section below.
@@ -317,7 +325,7 @@ Most tools break Bengali. zobvia doesn't:
 - Latin tool names (*ChatGPT, Midjourney*) sized +4–6% inside Bengali lines
 - Full rules in [`references/bengali-text-rules.md`](references/bengali-text-rules.md), RTL + Devanagari in [`references/multilingual-typography.md`](references/multilingual-typography.md)
 
-## 📚 Capability index (210 named items)
+## 📚 Capability index (216 named items)
 
 | Library | Count | File |
 |---|---:|---|
@@ -337,6 +345,7 @@ Most tools break Bengali. zobvia doesn't:
 | Ready-to-say prompts | 32 | `references/prompt-library.md` |
 | Colour tones (× 6 swatches, WCAG-checked) | 11 | `references/color-system.md` |
 | Platform specs (YT, Shorts, Reels, TikTok, FB, LinkedIn) | 7 | `references/platform-specs.md` |
+| v1.4 systems (multi-colour accents, keyword colouring, karaoke pop, SFX coverage, progress bar, scene counter) | 6 | `references/sfx-library.md` + starter components |
 
 Plus: 27 reference files total, 11 working scripts, a compilable Remotion starter
 ([`templates/remotion-starter/`](templates/remotion-starter/)), voiceover workflow,
@@ -348,7 +357,7 @@ client brief template, and freelancer pricing guidance (Bangladesh + internation
 This repo ships with a test suite — not claims:
 
 ```bash
-python3 -m unittest discover -s tests     # 34 tests: SRT, palettes, SFX WAVs (12 types + peak levels), access gate, converter, transcribe, QC, planner/captions/aspects/voiceover/render, genre/SFX themes
+python3 -m unittest discover -s tests     # 38 tests: SRT, palettes, SFX WAVs (12 types + peak levels), access gate, converter, transcribe, QC, planner/captions/aspects/voiceover/render, genre/SFX themes, v1.4 accents/coverage
 python3 scripts/check_tools.py            # honest tool report for your machine
 ```
 
@@ -359,7 +368,7 @@ Verified end-to-end: SRT parsing (incl. Bengali + malformed blocks), palette
 contrast maths, WAV generation (headers/durations), `extract.py` on a real clip
 (scene-cut detection; transcription honestly *skipped with a recorded reason*
 when Whisper isn't installed — never faked), the one-command converter on the
-Bengali and English example SRTs (10 scenes, 7 SFX events, 45 s each), the
+Bengali and English example SRTs (10 scenes, 11 SFX events — every scene covered, 45 s each), the
 family planner on a 24-cue SRT (5 stage pipelines in rotation, 83% hard cuts,
 ending trio intact), multi-aspect generation (16:9 / 9:16 / 1:1 dimensions),
 voiceover drift warning on a mismatched recording, `--render` failure
