@@ -1,0 +1,10 @@
+node_modules/
+out/
+*.zip
+__pycache__/
+*.pyc
+.env
+.DS_Store
+references/watch/
+*.mp4
+!examples/**/*.mp4

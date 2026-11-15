@@ -1,0 +1,9 @@
+# zobvia Python dependencies
+# Core scripts (srt_parse, color_palette) need nothing beyond the stdlib.
+# sfx_gen works with the stdlib too; numpy makes it faster.
+numpy>=1.26.0
+Pillow>=10.0.0
+# LEARN mode transcription (optional — extract.py degrades honestly without it):
+faster-whisper>=1.0.0
+# Downloading videos (system tool, not pip-managed here):
+#   pip install yt-dlp   (or: brew install yt-dlp / winget install yt-dlp)
