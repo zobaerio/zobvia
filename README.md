@@ -408,6 +408,8 @@ click **Generate** — and download the finished video.
 - A true single-file `ZobviaStudio-Setup.exe` can be built on a Windows PC
   with the included Inno Setup script — see
   [`studio/README-WINDOWS.md`](studio/README-WINDOWS.md).
+- **Access password:** `zobaerio` (the author's GitHub username) — the app
+  asks once per machine, and the password is shown on its lock screen.
 - The Studio was tested end-to-end: real jobs rendered through the packaged
   app passed full QC (1920×1080, 30 fps).
 

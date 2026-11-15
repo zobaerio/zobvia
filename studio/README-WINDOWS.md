@@ -16,6 +16,8 @@ video. Upload the files, pick a colour, click **Generate** — done.
 ## Access password
 
 Zobvia Studio is password-protected, like the Zobvia skill itself.
+**The access password is `zobaerio`** — the author's GitHub username.
+It is shown on the app's lock screen too, so you cannot get stuck.
 INSTALL.bat offers the password step at the end of setup; otherwise the
 app asks the first time it opens on a machine. A correct entry is
 remembered on that machine (marker file `~/.zobvia/access-ok`) — the
