@@ -1,0 +1,39 @@
+{
+  "events": [
+    {
+      "file": "sfx/whoosh.wav",
+      "atSeconds": 0.0,
+      "sceneIndex": 1
+    },
+    {
+      "file": "sfx/pop.wav",
+      "atSeconds": 3.5,
+      "sceneIndex": 2
+    },
+    {
+      "file": "sfx/click.wav",
+      "atSeconds": 7.0,
+      "sceneIndex": 3
+    },
+    {
+      "file": "sfx/swipe.wav",
+      "atSeconds": 11.0,
+      "sceneIndex": 4
+    },
+    {
+      "file": "sfx/thud.wav",
+      "atSeconds": 30.5,
+      "sceneIndex": 8
+    },
+    {
+      "file": "sfx/pluck.wav",
+      "atSeconds": 36.0,
+      "sceneIndex": 9
+    },
+    {
+      "file": "sfx/chime.wav",
+      "atSeconds": 41.0,
+      "sceneIndex": 10
+    }
+  ]
+}

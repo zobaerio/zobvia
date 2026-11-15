@@ -1,0 +1,91 @@
+{
+  "title": "example-bengali",
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "totalDuration": 45.0,
+  "family": "stage",
+  "captions": "word-by-word",
+  "scenes": [
+    {
+      "index": 1,
+      "start": 0.0,
+      "end": 3.5,
+      "text": "আসসালামু আলাইকুম! আজকে আমরা দেখব কীভাবে AI দিয়ে ভিডিও বানানো যায়।",
+      "pipeline": "kinetic-hook",
+      "transition": "none"
+    },
+    {
+      "index": 2,
+      "start": 3.5,
+      "end": 7.0,
+      "text": "প্রথম টুল হলো ChatGPT — এটা দিয়ে script লেখা যায় খুব সহজে।",
+      "pipeline": "glossy-ui",
+      "transition": "cut"
+    },
+    {
+      "index": 3,
+      "start": 7.0,
+      "end": 11.0,
+      "text": "তারপর আসে Midjourney, যেটা দিয়ে অসাধারণ ছবি তৈরি হয়।",
+      "pipeline": "carousel-3d",
+      "transition": "cut"
+    },
+    {
+      "index": 4,
+      "start": 11.0,
+      "end": 15.5,
+      "text": "আর DALL·E দিয়ে তুমি যেকোনো আইডিয়াকে ছবিতে রূপ দিতে পারবে।",
+      "pipeline": "glass-cards",
+      "transition": "cut"
+    },
+    {
+      "index": 5,
+      "start": 15.5,
+      "end": 20.0,
+      "text": "এই তিনটা টুল একসাথে ব্যবহার করলেই তৈরি হবে professional কনটেন্ট।",
+      "pipeline": "minimal-clean",
+      "transition": "cut"
+    },
+    {
+      "index": 6,
+      "start": 20.0,
+      "end": 25.0,
+      "text": "সমস্যা হলো — বেশিরভাগ মানুষ জানে না কোথা থেকে শুরু করতে হয়।",
+      "pipeline": "gradient-fluid",
+      "transition": "slide"
+    },
+    {
+      "index": 7,
+      "start": 25.0,
+      "end": 30.5,
+      "text": "সমাধান খুব simple: প্রথমে script, তারপর ছবি, তারপর editing।",
+      "pipeline": "carousel-3d",
+      "transition": "cut"
+    },
+    {
+      "index": 8,
+      "start": 30.5,
+      "end": 36.0,
+      "text": "মাত্র ৩০ মিনিটে তুমি বানাতে পারবে একটা সম্পূর্ণ ভিডিও — ১০০% ফ্রি টুল দিয়ে!",
+      "pipeline": "statement",
+      "transition": "cut"
+    },
+    {
+      "index": 9,
+      "start": 36.0,
+      "end": 41.0,
+      "text": "মনে রাখবে: Hook, Value, Recap — এই তিনটাই হলো viral ভিডিওর formula।",
+      "pipeline": "recap",
+      "transition": "cut"
+    },
+    {
+      "index": 10,
+      "start": 41.0,
+      "end": 45.0,
+      "text": "আজকের ভিডিওটা ভালো লাগলে channel-টা subscribe করে রাখো। দেখা হবে পরের ভিডিওতে!",
+      "pipeline": "cta",
+      "transition": "cut"
+    }
+  ]
+}
