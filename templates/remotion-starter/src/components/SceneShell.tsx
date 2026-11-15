@@ -1,5 +1,5 @@
 import React from "react";
-import { AbsoluteFill } from "remotion";
+import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
 import { theme } from "../theme";
 
 export interface SceneShellProps {
@@ -12,12 +12,20 @@ export interface SceneShellProps {
 /**
  * Layout shell shared by every scene: theme background, safe margins
  * (96px sides / 72px top-bottom inside 1920x1080) and an optional kicker.
+ * Children get a subtle entrance — a 10-frame fade/rise — so every
+ * pipeline shares the same calm way of arriving on screen.
  */
 export const SceneShell: React.FC<SceneShellProps> = ({
   kicker,
   children,
   style,
 }) => {
+  const frame = useCurrentFrame();
+  const entrance = interpolate(frame, [0, 10], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
   return (
     <AbsoluteFill
       style={{
@@ -38,12 +46,23 @@ export const SceneShell: React.FC<SceneShellProps> = ({
             color: theme.accent,
             textTransform: "uppercase",
             marginBottom: 36,
+            opacity: entrance,
           }}
         >
           {kicker}
         </div>
       ) : null}
-      {children}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          opacity: entrance,
+          transform: `translateY(${(1 - entrance) * 24}px)`,
+        }}
+      >
+        {children}
+      </div>
     </AbsoluteFill>
   );
 };

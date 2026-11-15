@@ -1,5 +1,60 @@
 # Changelog
 
+## 1.1.0 — 2026-11-15
+
+The converter release: SRT in → ready Remotion project out, in one command.
+
+### Added
+- **`scripts/create_video.py`** — the one-command converter:
+  `create_video.py --srt <file> --palette "<tone|#hex>" --out <dir>
+  [--aspect 16:9|9:16|1:1] [--title ...]`. Parses via `srt_parse.py`,
+  plans scenes (Kinetic Hook → rotating Bento/Dashboard/Timeline middles
+  with number/step-word keyword overrides → Statement/Recap/CTA ending
+  for SRTs with ≥ 6 cues), resolves the palette via `color_palette.py`
+  into `src/theme.ts` (WCAG-checked, black/white fallback when no swatch
+  reaches AA against the background), and writes
+  `src/data/timeline.json`, `timeline.md`, `src/data/sfx.json`,
+  generated SFX WAVs in `public/sfx/` (5–7 events, role-mapped:
+  whoosh/thud/pluck/chime + rotating pop/click/swipe) and
+  `PROJECT_README.md`. Deterministic; bad SRT or unknown palette exits 2
+  with the valid tones listed.
+- **Data-driven starter**: `Main` now builds Sequences from
+  `src/data/timeline.json` and plays `src/data/sfx.json` events;
+  `Root` takes fps/width/height/duration from the JSON. Seven generic
+  scene components driven by scene data — `KineticHook`, `BentoScene`,
+  `DashboardScene` (counters for numbers in the cue, ASCII + Bengali
+  digits, kept in the cue's digit script), `TimelineScene`,
+  `StatementCard`, `RecapGrid`, `CTACard` — plus a shared
+  `components/chunks.ts` (sentence splitting / word-boundary truncation)
+  and a subtle entrance in `SceneShell`. A 9-scene demo `timeline.json`
+  ships in the starter so it still compiles and renders standalone;
+  `PreviewAudio` behaviour unchanged.
+- **`scripts/transcribe.py`** — media → SRT via faster-whisper or the
+  `whisper` CLI. With neither backend installed it prints the install
+  commands and exits 3 (honest degradation, nothing faked).
+- **`scripts/qc_check.py`** — ffprobe QC for rendered videos: reports
+  dimensions/fps/duration/audio and PASS/FAILs each expectation given
+  (exit 1 on a failed expectation, 3 when ffprobe is missing).
+- Examples: `examples/example-bengali.srt` and
+  `examples/example-english.srt` (10 cues / 45 s each).
+
+### Verification (2026-11-15, build machine)
+- Test suite: **21/21 pass** (`python3 -m unittest discover -s tests`) —
+  6 new tests cover the converter (full Bengali run, bad palette,
+  9:16 aspect, empty SRT), transcribe's no-backend exit 3, and
+  qc_check against a real ffmpeg-generated clip.
+- `create_video.py` run for real on both example SRTs: 10 scenes,
+  45.0 s, 7 SFX events each (16:9 tech palette; 9:16 premium palette).
+- `npx tsc --noEmit` passes in the starter **and** in a
+  converter-generated project.
+
+### Still unverified
+- Live Whisper transcription (no Whisper backend on the build machine;
+  the faster-whisper and whisper-CLI paths are code-complete but were
+  only exercised up to the honest exit-3 degradation).
+- Still-frame render — unchanged from 1.0.0: headless Chromium on the
+  build machine cannot reach Google Fonts through the sandbox proxy.
+
 ## Unreleased
 
 - **Access password gate** (owner's decision, 2026-11-15): installing or

@@ -2,7 +2,9 @@
 
 Run:  python3 -m unittest discover -s tests -v
 Covers: srt_parse (normal, Bengali, malformed, empty), color_palette
-(tones, anchors, contrast sanity), sfx_gen (WAV headers, durations, sizes).
+(tones, anchors, contrast sanity), sfx_gen (WAV headers, durations, sizes),
+access_check (password gate), create_video (SRT -> Remotion project),
+transcribe (honest no-backend degradation), qc_check (ffprobe checks).
 """
 import json
 import subprocess
@@ -187,6 +189,132 @@ class TestAccessCheck(unittest.TestCase):
                 [sys.executable, str(SCRIPTS / "access_check.py"), "--status"],
                 capture_output=True, text=True, env=env)
             self.assertEqual(p.returncode, 0)  # now unlocked
+
+
+class TestCreateVideo(unittest.TestCase):
+    SRT = ROOT / "examples" / "example-bengali.srt"  # 10 cues, 45.0s
+
+    def _tech_hexes(self):
+        sys.path.insert(0, str(SCRIPTS))
+        try:
+            import color_palette
+            return {s["hex"].upper() for s in color_palette.PALETTES["tech"]}
+        finally:
+            sys.path.remove(str(SCRIPTS))
+
+    def test_full_run_bengali(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "proj"
+            run("create_video.py", "--srt", str(self.SRT),
+                "--palette", "tech", "--out", str(out))
+            timeline = json.loads(
+                (out / "src" / "data" / "timeline.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(timeline["scenes"]), 10)
+            self.assertEqual(timeline["width"], 1920)
+            self.assertEqual(timeline["height"], 1080)
+            self.assertAlmostEqual(timeline["totalDuration"], 45.0)
+            self.assertEqual(timeline["scenes"][0]["pipeline"], "kinetic-hook")
+            self.assertEqual(timeline["scenes"][-1]["pipeline"], "cta")
+            theme = (out / "src" / "theme.ts").read_text(encoding="utf-8")
+            self.assertTrue(any(h in theme for h in self._tech_hexes()),
+                            "theme.ts must carry a hex from the tech palette")
+            self.assertTrue((out / "timeline.md").is_file())
+            wavs = list((out / "public" / "sfx").glob("*.wav"))
+            self.assertGreaterEqual(len(wavs), 1)
+            sfx = json.loads(
+                (out / "src" / "data" / "sfx.json").read_text(encoding="utf-8"))
+            self.assertGreaterEqual(len(sfx["events"]), 5)
+            self.assertLessEqual(len(sfx["events"]), 7)
+            for ev in sfx["events"]:
+                self.assertLessEqual(ev["atSeconds"], timeline["totalDuration"])
+                self.assertTrue((out / "public" / ev["file"]).is_file())
+            readme = (out / "PROJECT_README.md").read_text(encoding="utf-8")
+            for cmd in ("npm install", "npx remotion studio",
+                        "npx remotion render Main out/video.mp4"):
+                self.assertIn(cmd, readme)
+
+    def test_bad_palette_errors(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = run("create_video.py", "--srt", str(self.SRT),
+                    "--palette", "bogus-tone", "--out", str(Path(td) / "x"),
+                    expect=None)
+            self.assertEqual(p.returncode, 2)
+            self.assertIn("tech", p.stderr)  # lists valid tones
+
+    def test_vertical_aspect(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "vert"
+            run("create_video.py", "--srt", str(self.SRT),
+                "--palette", "#0EA5E9", "--out", str(out), "--aspect", "9:16")
+            timeline = json.loads(
+                (out / "src" / "data" / "timeline.json").read_text(encoding="utf-8"))
+            self.assertEqual(timeline["height"], 1920)
+            self.assertEqual(timeline["width"], 1080)
+
+    def test_empty_srt_errors(self):
+        with tempfile.TemporaryDirectory() as td:
+            empty = Path(td) / "empty.srt"
+            empty.write_text("", encoding="utf-8")
+            p = run("create_video.py", "--srt", str(empty),
+                    "--palette", "tech", "--out", str(Path(td) / "x"),
+                    expect=None)
+            self.assertEqual(p.returncode, 2)
+
+
+class TestTranscribe(unittest.TestCase):
+    def test_no_backend_is_honest_error(self):
+        import shutil as _shutil
+        try:
+            import faster_whisper  # noqa: F401
+            has_backend = True
+        except ImportError:
+            has_backend = bool(_shutil.which("whisper"))
+        if has_backend:
+            self.skipTest("a whisper backend IS present on this machine")
+        with tempfile.TemporaryDirectory() as td:
+            media = Path(td) / "clip.wav"
+            media.write_bytes(b"RIFF")  # existence is all that is checked
+            p = run("transcribe.py", "--in", str(media),
+                    "--out", str(Path(td) / "out.srt"), expect=None)
+            self.assertEqual(p.returncode, 3)
+            self.assertIn("pip install", p.stderr)
+
+
+class TestQcCheck(unittest.TestCase):
+    def _make_clip(self, td):
+        import shutil as _shutil
+        if not _shutil.which("ffmpeg"):
+            self.skipTest("ffmpeg not available")
+        clip = Path(td) / "clip.mp4"
+        cmd = ["ffmpeg", "-y", "-v", "error",
+               "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=30",
+               "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+               "-c:v", "libx264", "-pix_fmt", "yuv420p",
+               "-c:a", "aac", "-shortest", str(clip)]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0 or not clip.is_file():
+            cmd[cmd.index("libx264")] = "mpeg4"
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode != 0 or not clip.is_file():
+                self.skipTest(f"could not generate test clip: {proc.stderr[-200:]}")
+        return clip
+
+    def test_report_mode_and_expectations(self):
+        import shutil as _shutil
+        if not _shutil.which("ffprobe"):
+            self.skipTest("ffprobe not available")
+        with tempfile.TemporaryDirectory() as td:
+            clip = self._make_clip(td)
+            p = run("qc_check.py", "--file", str(clip))
+            self.assertIn("has_audio: True", p.stdout)
+            self.assertIn("320x240", p.stdout)
+            run("qc_check.py", "--file", str(clip),
+                "--expect-width", "320", "--expect-height", "240",
+                "--expect-fps", "30", "--expect-duration", "2")
+            p = run("qc_check.py", "--file", str(clip),
+                    "--expect-width", "999", expect=None)
+            self.assertNotEqual(p.returncode, 0)
+            self.assertIn("FAIL", p.stdout)
 
 
 if __name__ == "__main__":

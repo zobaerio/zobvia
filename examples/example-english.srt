@@ -1,0 +1,39 @@
+1
+00:00:00,000 --> 00:00:03,500
+Welcome! Today we will see how to make a video with AI.
+
+2
+00:00:03,500 --> 00:00:07,000
+The first tool is ChatGPT — it writes scripts in seconds.
+
+3
+00:00:07,000 --> 00:00:11,000
+Next comes Midjourney, which creates stunning images.
+
+4
+00:00:11,000 --> 00:00:15,500
+And DALL·E turns any idea into a picture.
+
+5
+00:00:15,500 --> 00:00:20,000
+Use these 3 tools together and you get professional content.
+
+6
+00:00:20,000 --> 00:00:25,000
+The problem is — most people do not know where to start.
+
+7
+00:00:25,000 --> 00:00:30,500
+The solution is simple: first the script, then images, then editing.
+
+8
+00:00:30,500 --> 00:00:36,000
+In just 30 minutes you can make a complete video — with 100% free tools!
+
+9
+00:00:36,000 --> 00:00:41,000
+Remember: Hook, Value, Recap — that is the formula of a viral video.
+
+10
+00:00:41,000 --> 00:00:45,000
+If you liked this video, subscribe to the channel. See you in the next one!

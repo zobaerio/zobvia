@@ -1,15 +1,14 @@
 /**
- * timing.ts — the single source of truth for WHEN things happen.
+ * timing.ts — FPS constant + the voiceover flag.
  *
- * DEMO MODE (this file, as shipped): a small hand-written, SRT-cue-like
- * timeline so the starter renders a complete 90-second video out of the box.
+ * The actual timeline now lives in `src/data/timeline.json` (typed via
+ * `src/data/timeline.ts`): Main.tsx builds its Sequences from that JSON
+ * and Root.tsx takes fps / width / height / duration from it. The
+ * one-command converter (scripts/create_video.py) regenerates the JSON
+ * from an SRT.
  *
- * CREATE MODE: zobvia replaces `DEMO_CUES` with data generated from
- * the user's subtitles. The skill's `scripts/srt_parse.py` parses the .srt
- * file into JSON cues ({startSec, endSec, text, scene}); that JSON is pasted
- * / written here as the cue array, and every composition, Sequence and scene
- * below re-times itself automatically — no other file needs to change.
- * Keep the `SrtCue` shape identical to the parser's output.
+ * The DEMO_CUES helpers below are retained for the legacy hand-written
+ * HookScene demo component; Main no longer reads them.
  */
 
 export const FPS = 30;

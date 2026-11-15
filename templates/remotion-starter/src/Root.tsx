@@ -2,7 +2,7 @@ import React from "react";
 import { Composition } from "remotion";
 import { loadFont } from "@remotion/google-fonts/HindSiliguri";
 import { Main, PreviewAudio } from "./Main";
-import { FPS, totalDurationInFrames } from "./timing";
+import { timeline, totalDurationInFrames } from "./data/timeline";
 
 // Bengali display font — weights used across the scenes.
 // loadFont() holds the render (delayRender) until the font is ready,
@@ -12,6 +12,11 @@ loadFont("normal", {
   subsets: ["bengali", "latin"],
 });
 
+/**
+ * Composition geometry comes from src/data/timeline.json — fps, width,
+ * height and duration all follow the generated timeline, so a 9:16 or
+ * 1:1 project needs no code changes here.
+ */
 export const RemotionRoot: React.FC = () => {
   return (
     <>
@@ -19,9 +24,9 @@ export const RemotionRoot: React.FC = () => {
         id="Main"
         component={Main}
         durationInFrames={totalDurationInFrames}
-        fps={FPS}
-        width={1920}
-        height={1080}
+        fps={timeline.fps}
+        width={timeline.width}
+        height={timeline.height}
         calculateMetadata={() => ({
           durationInFrames: totalDurationInFrames,
         })}
@@ -30,9 +35,9 @@ export const RemotionRoot: React.FC = () => {
         id="PreviewAudio"
         component={PreviewAudio}
         durationInFrames={totalDurationInFrames}
-        fps={FPS}
-        width={1920}
-        height={1080}
+        fps={timeline.fps}
+        width={timeline.width}
+        height={timeline.height}
         calculateMetadata={() => ({
           durationInFrames: totalDurationInFrames,
         })}

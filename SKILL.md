@@ -232,8 +232,27 @@ Pick from the 16 in `references/style-pipelines.md`. Rules:
 
 ### B5 — Scaffold the project
 
-Copy `templates/remotion-starter/` and shape it per
-`references/remotion-structure.md`: compositions `Main` and
+**Fast path (default):** run the one-command converter —
+
+```bash
+python3 scripts/create_video.py --srt <file.srt> --palette "<tone-or-#hex>" \
+    --out <dir> [--aspect 16:9|9:16|1:1] [--title "..."]
+```
+
+It copies `templates/remotion-starter/`, plans the scenes (cue 1 =
+Kinetic Hook; middles rotate Bento / Dashboard / Timeline with keyword
+overrides; last three cues of longer SRTs = Statement → Recap → CTA),
+resolves the palette through `scripts/color_palette.py` into
+`src/theme.ts`, writes `src/data/timeline.json`, `timeline.md`,
+`src/data/sfx.json` plus the generated WAVs in `public/sfx/`, and a
+`PROJECT_README.md`. The starter's `Main` composition is data-driven:
+it builds Sequences from `timeline.json` and plays the SFX from
+`sfx.json` — so the generated project previews immediately. Customise
+the generated project afterwards only where the user's style or a
+learned style requires it.
+
+**Manual path:** copy `templates/remotion-starter/` yourself and shape
+it per `references/remotion-structure.md`: compositions `Main` and
 `PreviewAudio` at 1920×1080 / 30 fps, duration computed from the SRT's
 last cue end, `theme.ts` carrying the chosen palette, fonts loaded via
 `@remotion/google-fonts`. **One font family per video.**
@@ -351,7 +370,10 @@ up front.
 | `scripts/extract.py` | LEARN A1 |
 | `scripts/srt_parse.py` | CREATE B1 |
 | `scripts/color_palette.py` | CREATE B2 |
+| `scripts/create_video.py` | CREATE B5 fast path — SRT + palette → full data-driven project in one command |
 | `scripts/sfx_gen.py` | CREATE B8 |
+| `scripts/transcribe.py` | Media → SRT when the user has audio/video but no subtitles (faster-whisper or whisper CLI; exits 3 with install hint when neither exists) |
+| `scripts/qc_check.py` | After a render (B11/B12): ffprobe check of dimensions / fps / duration / audio |
 | `templates/remotion-starter/` | CREATE B5 scaffold source |
 
 ### Expanded library (P5)

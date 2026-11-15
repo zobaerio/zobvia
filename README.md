@@ -85,6 +85,43 @@ cp -r . ~/.claude/skills/zobvia   # or drop into a project's .claude/skills/
 - **SFX only, no music:** 7 procedurally-generatable sound types (`scripts/sfx_gen.py`), 5–7 events per video, never masking the voice.
 - **Delivery:** Preview = project ZIP + `npm install` / `npx remotion studio` / `npx remotion render Main out/video.mp4`. Re-render = MP4 + ZIP.
 
+## ⚡ One-command converter
+
+Already have an SRT and a colour? Skip the ceremony — one command
+builds the complete, ready-to-preview project:
+
+```bash
+python3 scripts/create_video.py --srt video.srt --palette tech --out my-video
+# options: --palette "#0EA5E9"  ·  --aspect 9:16  ·  --title "My Video"
+```
+
+What you get in `my-video/`:
+
+- `src/data/timeline.json` — one scene per cue, planned automatically:
+  Kinetic Hook first, Bento / Dashboard / Timeline in the middle
+  (numbers → Dashboard, step words → Timeline), and Statement → Recap →
+  CTA at the end of longer SRTs
+- `src/theme.ts` — your palette, resolved and WCAG-checked
+- `timeline.md` — the human-readable plan (scene table + SFX map)
+- `public/sfx/*.wav` + `src/data/sfx.json` — 5–7 generated SFX events,
+  wired into the composition (SFX only, no music)
+- `PROJECT_README.md` — what was generated + the 3 run commands
+
+The starter's `Main` composition is data-driven, so the generated
+project just works: `npm install`, `npx remotion studio`, done.
+
+Two companion tools round out the converter:
+
+```bash
+python3 scripts/transcribe.py --in voice.mp3 --out voice.srt   # media → SRT (Whisper)
+python3 scripts/qc_check.py --file out/video.mp4 --expect-width 1920 --expect-height 1080 --expect-fps 30
+```
+
+`transcribe.py` uses faster-whisper or the `whisper` CLI; with neither
+installed it says so and exits 3 — it never invents a transcript.
+`qc_check.py` probes a render with ffprobe and PASS/FAILs each
+expectation you give it.
+
 ## 🎬 How to make a video — the complete guide
 
 Everything below is the whole workflow, start to finish. No editing
@@ -232,7 +269,7 @@ Most tools break Bengali. zobvia doesn't:
 | Colour tones (× 6 swatches, WCAG-checked) | 11 | `references/color-system.md` |
 | Platform specs (YT, Shorts, Reels, TikTok, FB, LinkedIn) | 7 | `references/platform-specs.md` |
 
-Plus: 27 reference files total, 8 working scripts, a compilable Remotion starter
+Plus: 27 reference files total, 11 working scripts, a compilable Remotion starter
 ([`templates/remotion-starter/`](templates/remotion-starter/)), voiceover workflow,
 licensing-safe music/SFX sourcing, export matrix, project workflow, QC checklist,
 client brief template, and freelancer pricing guidance (Bangladesh + international).
@@ -242,16 +279,19 @@ client brief template, and freelancer pricing guidance (Bangladesh + internation
 This repo ships with a test suite — not claims:
 
 ```bash
-python3 -m unittest discover -s tests     # 15 tests: SRT, palettes, SFX WAVs, access gate
+python3 -m unittest discover -s tests     # 21 tests: SRT, palettes, SFX WAVs, access gate, converter, transcribe, QC
 python3 scripts/check_tools.py            # honest tool report for your machine
 ```
 
 Verified end-to-end: SRT parsing (incl. Bengali + malformed blocks), palette
 contrast maths, WAV generation (headers/durations), `extract.py` on a real clip
 (scene-cut detection; transcription honestly *skipped with a recorded reason*
-when Whisper isn't installed — never faked), and `tsc --noEmit` on the Remotion
-starter. A still-frame render requires direct access to Google Fonts from the
-rendering machine; see `CHANGELOG.md` for the exact verification log.
+when Whisper isn't installed — never faked), the one-command converter on the
+Bengali and English example SRTs (10 scenes, 7 SFX events, 45 s each),
+`qc_check.py` against a real ffmpeg-generated clip, and `tsc --noEmit` on both
+the Remotion starter and a converter-generated project. A still-frame render
+requires direct access to Google Fonts from the rendering machine; see
+`CHANGELOG.md` for the exact verification log.
 
 ## 📁 Structure
 
@@ -259,10 +299,10 @@ rendering machine; see `CHANGELOG.md` for the exact verification log.
 zobvia/
 ├── SKILL.md                  # the skill: routing, LEARN A0–A8, CREATE B0–B12, hard rules
 ├── references/               # 27 files — pipelines, captions, hooks, genres, platforms…
-├── scripts/                  # extract · srt_parse · color_palette · sfx_gen · check_tools · style_stats · access_check
+├── scripts/                  # extract · srt_parse · color_palette · create_video · sfx_gen · check_tools · style_stats · access_check · transcribe · qc_check · render_helper.sh
 ├── assets/                   # animated demo banner (demo.svg)
-├── templates/remotion-starter/  # working Remotion 4 project (Main + PreviewAudio)
-├── examples/                 # example SRT → generated timeline + filled Dark Tech style skill
+├── templates/remotion-starter/  # working Remotion 4 project — data-driven Main + PreviewAudio, 7 scene pipelines
+├── examples/                 # Bengali + English example SRTs → generated timeline + filled Dark Tech style skill
 └── tests/                    # unittest suite for the scripts
 ```
 
