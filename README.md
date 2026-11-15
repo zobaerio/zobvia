@@ -20,6 +20,8 @@
 
 ![Zobvia — how it works](assets/demo.svg)
 
+**▶️ [Watch the Installation Guide](zobvia-install-guide.mp4)** — 20 seconds, step by step: clone → install → access password → your first video.
+
 </div>
 
 ---
