@@ -20,7 +20,9 @@
 
 ![Zobvia — how it works](assets/demo.svg)
 
-**▶️ [Watch the Installation Guide](zobvia-install-guide.mp4)** — 20 seconds, step by step: clone → install → access password → your first video.
+**▶️ [Watch the Installation Guide](zobvia-install-guide.mp4)**
+
+**▶️ [Watch a real video made by Zobvia](zobvia-demo-video-v3.mp4)** — a 45-second Bengali motion-graphics video, rendered end-to-end by Zobvia v1.4: multi-colour text, karaoke captions, a progress bar, and matched sound in every scene. — 20 seconds, step by step: clone → install → access password → your first video.
 
 </div>
 
