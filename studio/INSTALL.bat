@@ -47,6 +47,12 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo.
+echo Access password setup - Zobvia Studio asks for a password
+echo the first time it is used on this machine. Enter it now:
+python "%~dp0zobvia\scripts\access_check.py"
+echo (If you skipped it, the app will simply ask when it opens.)
+
 echo Creating Desktop shortcut...
 powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop') + '\Zobvia Studio.lnk'); $s.TargetPath='%~dp0ZobviaStudio.bat'; $s.WorkingDirectory='%~dp0'; $s.Description='Zobvia Studio - SRT + Voice to Video'; $s.Save()"
 

@@ -39,6 +39,25 @@ PATCHED_ROOT = STUDIO / "Root.patched.tsx"  # self-hosted-font Root.tsx
 JOBS_DIR = STUDIO / "jobs"
 INDEX_HTML = STUDIO / "index.html"
 
+# --- Access gate -----------------------------------------------------------
+# Same gate as the Zobvia skill: only a SHA-256 hash of the password is
+# stored (in the skill's scripts/access_check.py); a correct entry writes
+# the per-machine marker ~/.zobvia/access-ok and the app stays unlocked.
+# If the access module is missing (partial copy), the gate is disabled
+# with a warning instead of bricking the app.
+ACCESS_CHECK = SKILL_DIR / "scripts" / "access_check.py"
+_access = None
+try:
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location("zobvia_access", ACCESS_CHECK)
+    _access = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_access)
+except Exception as _e:  # noqa: BLE001
+    print(f"warning: access gate disabled ({_e})")
+
+def access_unlocked() -> bool:
+    return True if _access is None else _access.is_unlocked()
+
 HOST, PORT = "127.0.0.1", 8770
 MAX_UPLOAD_BYTES = 600 * 1024 * 1024  # 600 MB safety cap
 RENDER_TIMEOUT_S = 25 * 60
@@ -453,6 +472,9 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if path == "/api/access":
+            self.send_json(200, {"unlocked": access_unlocked()})
+            return
         m = re.match(r"^/api/jobs/([0-9a-f]+)$", path)
         if m:
             with JOBS_LOCK:
@@ -479,8 +501,29 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/access/unlock":
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length > 0 else b""
+            password = ""
+            try:
+                password = (json.loads(raw or b"{}").get("password") or "")
+            except Exception:  # noqa: BLE001
+                from urllib.parse import parse_qs
+                password = (parse_qs(raw.decode("utf-8", "replace"))
+                            .get("password", [""])[0])
+            if _access is None or _access.verify(password):
+                self.send_json(200, {"unlocked": True})
+            else:
+                self.send_json(403, {"error": "Wrong password — "
+                                              "সঠিক পাসওয়ার্ড দাও।"})
+            return
         if parsed.path != "/api/jobs":
             self.send_json(404, {"error": "not found"})
+            return
+        if not access_unlocked():
+            self.send_json(403, {"error": "locked",
+                                 "message": "Access password required — "
+                                            "আগে পাসওয়ার্ড দিয়ে unlock করো।"})
             return
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > MAX_UPLOAD_BYTES:

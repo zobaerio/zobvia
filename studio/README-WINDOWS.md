@@ -13,6 +13,14 @@ video. Upload the files, pick a colour, click **Generate** — done.
 3. Double-click the **Zobvia Studio** Desktop shortcut (or `ZobviaStudio.bat`).
    Your browser opens at http://localhost:8770 — that is the app.
 
+## Access password
+
+Zobvia Studio is password-protected, like the Zobvia skill itself.
+INSTALL.bat offers the password step at the end of setup; otherwise the
+app asks the first time it opens on a machine. A correct entry is
+remembered on that machine (marker file `~/.zobvia/access-ok`) — the
+password itself is never stored, only its SHA-256 hash is checked.
+
 ## Use
 
 1. Drag in your **SRT** file (required) and your **voice** file (optional).

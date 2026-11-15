@@ -65,9 +65,34 @@
   .dl{display:inline-block;margin-top:14px;padding:12px 22px;border-radius:10px;font-weight:700;
       background:var(--amber);color:#1a1000;text-decoration:none}
   footer{color:var(--muted);text-align:center;font-size:12.5px;margin-top:8px;line-height:1.7}
+  /* --- access lock overlay --- */
+  #lockOverlay{position:fixed;inset:0;background:rgba(4,8,14,.88);backdrop-filter:blur(6px);
+    display:none;align-items:center;justify-content:center;z-index:50;padding:18px}
+  #lockOverlay.show{display:flex}
+  .lockbox{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+    border-radius:18px;padding:30px 26px;max-width:380px;width:100%;text-align:center}
+  .lockbox .big{font-size:38px}
+  .lockbox h2{margin:8px 0 4px}
+  .lockbox p{color:var(--muted);font-size:13.5px;margin:4px 0 16px}
+  .lockbox input{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--line);
+    background:#0a141f;color:var(--text);font-size:16px;text-align:center}
+  .lockbox button{width:100%;margin-top:12px;padding:12px;border:0;border-radius:10px;cursor:pointer;
+    background:linear-gradient(90deg,var(--sky),var(--cyan));color:#04222e;font-weight:800;font-size:15px}
+  .lockbox .lerr{color:var(--bad);font-size:13px;min-height:18px;margin-top:10px}
 </style>
 </head>
 <body>
+<div id="lockOverlay">
+  <div class="lockbox">
+    <div class="big">🔐</div>
+    <h2>Zobvia Studio</h2>
+    <p>এই app টা password-protected। ব্যবহার করতে access password দাও।<br>
+       This app is password-protected — enter the access password to continue.</p>
+    <input id="lockPw" type="password" placeholder="Access password" autocomplete="current-password">
+    <button id="lockBtn">Unlock — খুলো</button>
+    <div class="lerr" id="lockErr"></div>
+  </div>
+</div>
 <div class="wrap">
   <header>
     <div class="logo"><span class="z">ZOBVIA</span> <span class="s">STUDIO</span></div>
@@ -158,6 +183,28 @@
 </div>
 
 <script>
+// --- access gate ---
+const lockOverlay = document.getElementById("lockOverlay"),
+      lockPw = document.getElementById("lockPw"),
+      lockErr = document.getElementById("lockErr");
+async function checkAccess(){
+  try{
+    const r = await fetch("/api/access");
+    const d = await r.json();
+    if(!d.unlocked) lockOverlay.classList.add("show");
+  }catch(e){ /* server older than the gate: stay open */ }
+}
+async function tryUnlock(){
+  lockErr.textContent = "";
+  const r = await fetch("/api/access/unlock", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({password: lockPw.value})});
+  if(r.ok){ lockOverlay.classList.remove("show"); lockPw.value=""; }
+  else{ const d = await r.json().catch(()=>({})); lockErr.textContent = d.error || "Wrong password."; }
+}
+document.getElementById("lockBtn").onclick = tryUnlock;
+lockPw.addEventListener("keydown", e=>{ if(e.key==="Enter") tryUnlock(); });
+checkAccess();
 const TONES = [
   ["creative","#4C1D95","#D946EF","#22D3EE","Creative — সৃজনশীল"],
   ["tech","#0A1929","#0EA5E9","#22D3EE","Tech — টেক"],
@@ -234,6 +281,7 @@ go.onclick = async ()=>{
   let job;
   try{
     const r = await fetch("/api/jobs", {method:"POST", body:fd});
+    if(r.status === 403){ lockOverlay.classList.add("show"); throw new Error("Locked — আগে password দিয়ে unlock করো।"); }
     job = await r.json();
     if(!r.ok) throw new Error(job.error || ("HTTP " + r.status));
   }catch(e){ showErr("Upload failed: " + e.message); reset(); return; }
