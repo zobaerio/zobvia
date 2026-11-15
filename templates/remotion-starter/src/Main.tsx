@@ -1,12 +1,24 @@
 import React from "react";
 import { AbsoluteFill, Audio, Sequence, staticFile } from "remotion";
+import { BeforeAfterScene } from "./scenes/BeforeAfterScene";
 import { BentoScene } from "./scenes/BentoScene";
+import { CarouselScene } from "./scenes/CarouselScene";
 import { CTACard } from "./scenes/CTACard";
+import { DarkTechScene } from "./scenes/DarkTechScene";
 import { DashboardScene } from "./scenes/DashboardScene";
+import { FlatVectorScene } from "./scenes/FlatVectorScene";
+import { GlassCardsScene } from "./scenes/GlassCardsScene";
+import { GlossyUiScene } from "./scenes/GlossyUiScene";
+import { GradientFluidScene } from "./scenes/GradientFluidScene";
+import { HubSpokeScene } from "./scenes/HubSpokeScene";
 import { KineticHook } from "./scenes/KineticHook";
+import { LineDrawScene } from "./scenes/LineDrawScene";
+import { MinimalCleanScene } from "./scenes/MinimalCleanScene";
 import { RecapGrid } from "./scenes/RecapGrid";
 import { StatementCard } from "./scenes/StatementCard";
 import { TimelineScene } from "./scenes/TimelineScene";
+import { CaptionRenderer } from "./components/CaptionRenderer";
+import { SceneTransition } from "./components/transitions";
 import { timeline, type SceneProps } from "./data/timeline";
 import rawSfx from "./data/sfx.json";
 import { theme } from "./theme";
@@ -15,11 +27,21 @@ import { HAS_VOICEOVER } from "./timing";
 /** Pipeline id (from timeline.json) -> scene component. */
 const PIPELINE_COMPONENTS: Record<string, React.FC<SceneProps>> = {
   "kinetic-hook": KineticHook,
+  "glossy-ui": GlossyUiScene,
+  "carousel-3d": CarouselScene,
+  "dark-tech": DarkTechScene,
+  "glass-cards": GlassCardsScene,
+  "minimal-clean": MinimalCleanScene,
+  "gradient-fluid": GradientFluidScene,
+  statement: StatementCard,
   bento: BentoScene,
   dashboard: DashboardScene,
-  timeline: TimelineScene,
-  statement: StatementCard,
   recap: RecapGrid,
+  timeline: TimelineScene,
+  "hub-spoke": HubSpokeScene,
+  "before-after": BeforeAfterScene,
+  "flat-vector": FlatVectorScene,
+  "line-draw": LineDrawScene,
   cta: CTACard,
 };
 
@@ -37,7 +59,9 @@ const sfxEvents: SfxEvent[] = (
  * The Main composition — fully data-driven.
  *
  * Sequences are built from src/data/timeline.json: one scene per SRT
- * cue, each rendered by the component for its pipeline id. SFX events
+ * cue, each rendered by the component for its pipeline id, wrapped in
+ * a SceneTransition (from scene.transition) and overlaid with a
+ * CaptionRenderer (preset from timeline.captions). SFX events
  * from src/data/sfx.json play from public/ at their planned times
  * (files are referenced with staticFile(), so the demo's empty event
  * list — and any missing file — can never break bundling).
@@ -54,17 +78,25 @@ export const Main: React.FC = () => {
     >
       {timeline.scenes.map((scene) => {
         const Scene = PIPELINE_COMPONENTS[scene.pipeline] ?? StatementCard;
+        const durationInFrames = Math.max(
+          1,
+          Math.round((scene.end - scene.start) * fps),
+        );
         return (
           <Sequence
             key={scene.index}
             from={Math.round(scene.start * fps)}
-            durationInFrames={Math.max(
-              1,
-              Math.round((scene.end - scene.start) * fps),
-            )}
+            durationInFrames={durationInFrames}
             name={`${scene.index}-${scene.pipeline}`}
           >
-            <Scene scene={scene} allScenes={timeline.scenes} />
+            <SceneTransition type={scene.transition}>
+              <Scene scene={scene} allScenes={timeline.scenes} />
+            </SceneTransition>
+            <CaptionRenderer
+              text={scene.text}
+              preset={timeline.captions}
+              durationInFrames={durationInFrames}
+            />
           </Sequence>
         );
       })}

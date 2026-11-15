@@ -19,8 +19,17 @@ export interface TimelineScene {
   end: number;
   /** Exact on-screen text (from the SRT, unedited). */
   text: string;
-  /** Pipeline id: kinetic-hook | bento | dashboard | timeline | statement | recap | cta */
+  /** Pipeline id: kinetic-hook | glossy-ui | carousel-3d | dark-tech | glass-cards | minimal-clean | gradient-fluid | statement | bento | dashboard | recap | timeline | hub-spoke | before-after | flat-vector | line-draw | cta */
   pipeline: string;
+  /** Entrance transition for this scene: none | cut | fade | slide | zoom | whip */
+  transition?: string;
+}
+
+export interface VoiceoverInfo {
+  file: string;
+  durationSeconds: number | null;
+  srtDurationSeconds: number;
+  driftSeconds: number | null;
 }
 
 export interface TimelineData {
@@ -31,6 +40,11 @@ export interface TimelineData {
   /** Total duration in seconds. */
   totalDuration: number;
   scenes: TimelineScene[];
+  /** Caption preset id from captions-library (e.g. "word-by-word"). */
+  captions?: string;
+  /** Layout family for the video (e.g. "stage", "grid", "flow"). */
+  family?: string;
+  voiceover?: VoiceoverInfo | null;
 }
 
 /** Props every data-driven scene component receives. */

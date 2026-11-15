@@ -228,6 +228,16 @@ Pick from the 16 in `references/style-pipelines.md`. Rules:
   Dashboard, Checklist) does not mix with stage family (Carousel,
   Kinetic, Statement) or flow family (Timeline, Hub-and-Spoke) —
   pick one family and vary within it.
+- The converter's planner enforces this automatically: it picks ONE
+  family from the SRT's dominant signal (step words → flow, numbers →
+  grid, otherwise stage), rotates pipelines within that family for the
+  middle scenes, and writes a per-scene `transition` into
+  `timeline.json` — about 80% hard cuts; a whip appears only on a topic
+  change (a ≥ 1.5 s pause between cues or a section keyword), capped
+  at 3 per video, with slide/zoom/fade used sparingly. All 16
+  pipelines are implemented as data-driven components in the starter,
+  so any pipeline id the planner (or a hand-authored timeline) emits
+  renders as-is.
 - A learned style's recipe section overrides these defaults.
 
 ### B5 — Scaffold the project
@@ -236,20 +246,34 @@ Pick from the 16 in `references/style-pipelines.md`. Rules:
 
 ```bash
 python3 scripts/create_video.py --srt <file.srt> --palette "<tone-or-#hex>" \
-    --out <dir> [--aspect 16:9|9:16|1:1] [--title "..."]
+    --out <dir> [--aspect 16:9|9:16|1:1] [--title "..."] \
+    [--captions <preset>] [--aspects 16:9,9:16] [--voiceover <file>] [--render]
 ```
 
 It copies `templates/remotion-starter/`, plans the scenes (cue 1 =
-Kinetic Hook; middles rotate Bento / Dashboard / Timeline with keyword
-overrides; last three cues of longer SRTs = Statement → Recap → CTA),
-resolves the palette through `scripts/color_palette.py` into
-`src/theme.ts`, writes `src/data/timeline.json`, `timeline.md`,
+Kinetic Hook; middle scenes rotate within ONE layout family chosen
+from the SRT's dominant signal — see B4; last three cues of longer
+SRTs = Statement → Recap → CTA), resolves the palette through
+`scripts/color_palette.py` into `src/theme.ts`, writes
+`src/data/timeline.json` (scenes with pipelines + transitions, plus
+project-level `family` and `captions`), `timeline.md`,
 `src/data/sfx.json` plus the generated WAVs in `public/sfx/`, and a
 `PROJECT_README.md`. The starter's `Main` composition is data-driven:
 it builds Sequences from `timeline.json` and plays the SFX from
 `sfx.json` — so the generated project previews immediately. Customise
 the generated project afterwards only where the user's style or a
 learned style requires it.
+
+Pro flags on the same command: `--captions <preset-id>` picks one of
+the 6 implemented caption presets (`word-by-word` default,
+`karaoke-highlight`, `bilingual-stack`, `classic-bottom`, `boxed-bold`,
+`minimal-line`); `--aspects 16:9,9:16,1:1` generates one project per
+aspect into `<out>/16x9`, `<out>/9x16`, …; `--voiceover <file.mp3|wav>`
+copies a real voiceover into each project, probes its duration with
+ffprobe and warns when it drifts from the SRT by more than 1 s;
+`--render` runs install → render → `qc_check.py` on the first project
+and fails loudly, naming the step, if any step fails — never report a
+render that did not produce an MP4.
 
 **Manual path:** copy `templates/remotion-starter/` yourself and shape
 it per `references/remotion-structure.md`: compositions `Main` and

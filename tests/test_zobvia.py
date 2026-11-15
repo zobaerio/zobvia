@@ -4,7 +4,9 @@ Run:  python3 -m unittest discover -s tests -v
 Covers: srt_parse (normal, Bengali, malformed, empty), color_palette
 (tones, anchors, contrast sanity), sfx_gen (WAV headers, durations, sizes),
 access_check (password gate), create_video (SRT -> Remotion project),
-transcribe (honest no-backend degradation), qc_check (ffprobe checks).
+transcribe (honest no-backend degradation), qc_check (ffprobe checks),
+create_video v1.2 (family planner, transitions, captions, multi-aspect,
+voiceover drift, honest --render failure, demo timeline registration).
 """
 import json
 import subprocess
@@ -315,6 +317,179 @@ class TestQcCheck(unittest.TestCase):
                     "--expect-width", "999", expect=None)
             self.assertNotEqual(p.returncode, 0)
             self.assertIn("FAIL", p.stdout)
+
+
+STAGE_MIDDLES = {"glossy-ui", "carousel-3d", "glass-cards",
+                 "minimal-clean", "gradient-fluid"}
+
+# 24 plain sentences: no digits, no step words (first/then/next/finally/
+# step), no section keywords, no commas — a neutral SRT whose planner
+# signals are all zero, so the default (stage) family must be chosen.
+LONG_SRT_TEXTS = [
+    "Morning light makes every colour look softer and warmer",
+    "A good story always begins with a simple honest question",
+    "People remember feelings much longer than they remember facts",
+    "The camera loves small movements and quiet confidence",
+    "Every frame should earn its place in the final cut",
+    "Silence between words can carry more weight than sound",
+    "A calm voice guides the viewer through busy pictures",
+    "Colour sets the mood before a single word is spoken",
+    "Simple shapes read clearly even on a tiny phone screen",
+    "The eye follows contrast wherever it appears on screen",
+    "Music shapes emotion while pictures carry the meaning",
+    "A strong ending leaves one clear thought behind",
+    "Viewers decide quickly whether a video respects their time",
+    "Clean typography makes hard ideas feel friendly",
+    "Movement should always point toward the message",
+    "A pause gives the audience room to breathe and think",
+    "Bright accents work best when they appear rarely",
+    "Every scene answers one question and raises another",
+    "The background should support the subject and never fight it",
+    "Rhythm comes from pattern and surprise working together",
+    "A clear promise at the start builds trust for the rest",
+    "Details matter most when everything else stays simple",
+    "What we covered today fits into one simple picture",
+    "Try this on your own video and watch the difference",
+]
+
+
+def _srt_timestamp(sec):
+    return f"00:{sec // 60:02d}:{sec % 60:02d},000"
+
+
+def make_srt(texts, cue_seconds=3):
+    blocks = []
+    for i, text in enumerate(texts):
+        blocks.append(
+            f"{i + 1}\n{_srt_timestamp(i * cue_seconds)} --> "
+            f"{_srt_timestamp((i + 1) * cue_seconds)}\n{text}\n")
+    return "\n".join(blocks)
+
+
+class TestCreateVideoV12(unittest.TestCase):
+    def _long_srt(self, td):
+        srt = Path(td) / "long.srt"
+        srt.write_text(make_srt(LONG_SRT_TEXTS), encoding="utf-8")
+        return srt
+
+    def _timeline(self, out):
+        return json.loads(
+            (out / "src" / "data" / "timeline.json").read_text(encoding="utf-8"))
+
+    def test_long_srt_family_rotation_transitions(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "proj"
+            run("create_video.py", "--srt", str(self._long_srt(td)),
+                "--palette", "tech", "--out", str(out))
+            timeline = self._timeline(out)
+            scenes = timeline["scenes"]
+            self.assertEqual(len(scenes), 24)
+            self.assertEqual(timeline["family"], "stage")
+            self.assertEqual(scenes[0]["pipeline"], "kinetic-hook")
+            self.assertEqual([s["pipeline"] for s in scenes[-3:]],
+                             ["statement", "recap", "cta"])
+            middles = scenes[1:-3]
+            distinct = {s["pipeline"] for s in middles}
+            self.assertGreaterEqual(len(distinct), 4)
+            self.assertLessEqual(distinct, STAGE_MIDDLES,
+                                 "middle pipelines must stay in one family")
+            for s in scenes:
+                self.assertIn("transition", s)
+            self.assertEqual(scenes[0]["transition"], "none")
+            non_first = scenes[1:]
+            cuts = sum(1 for s in non_first if s["transition"] == "cut")
+            self.assertGreaterEqual(cuts / len(non_first), 0.7)
+
+    def test_captions_flag_and_bad_preset(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "proj"
+            run("create_video.py", "--srt", str(self._long_srt(td)),
+                "--palette", "tech", "--out", str(out),
+                "--captions", "karaoke-highlight")
+            self.assertEqual(self._timeline(out)["captions"],
+                             "karaoke-highlight")
+            p = run("create_video.py", "--srt", str(self._long_srt(td)),
+                    "--palette", "tech", "--out", str(Path(td) / "x"),
+                    "--captions", "bogus-preset", expect=None)
+            self.assertEqual(p.returncode, 2)
+            self.assertIn("karaoke-highlight", p.stderr)  # lists valid ids
+
+    def test_multi_aspect_projects(self):
+        with tempfile.TemporaryDirectory() as td:
+            srt = Path(td) / "in.srt"
+            srt.write_text(SRT_OK, encoding="utf-8")
+            out = Path(td) / "multi"
+            run("create_video.py", "--srt", str(srt),
+                "--palette", "tech", "--out", str(out),
+                "--aspects", "16:9,9:16")
+            wide = self._timeline(out / "16x9")
+            tall = self._timeline(out / "9x16")
+            self.assertEqual((wide["width"], wide["height"]), (1920, 1080))
+            self.assertEqual((tall["width"], tall["height"]), (1080, 1920))
+
+    def test_voiceover_drift_warns_but_succeeds(self):
+        import math
+        import shutil as _shutil
+        if not _shutil.which("ffprobe"):
+            self.skipTest("ffprobe not available")
+        with tempfile.TemporaryDirectory() as td:
+            vo = Path(td) / "voice.wav"
+            with wave.open(str(vo), "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(8000)
+                frames = b"".join(
+                    int(8000 * 0.3 * math.sin(2 * math.pi * 440 * i / 8000)
+                        ).to_bytes(2, "little", signed=True)
+                    for i in range(8000 * 3))
+                w.writeframes(frames)
+            out = Path(td) / "proj"
+            # example-bengali.srt totals 45.0s; the voiceover is 3s.
+            p = run("create_video.py", "--srt",
+                    str(ROOT / "examples" / "example-bengali.srt"),
+                    "--palette", "tech", "--out", str(out),
+                    "--voiceover", str(vo))
+            self.assertIn("WARNING: voiceover duration", p.stdout)
+            self.assertTrue((out / "public" / "voiceover.wav").is_file())
+            info = self._timeline(out)["voiceover"]
+            self.assertEqual(info["file"], "voiceover.wav")
+            self.assertAlmostEqual(info["durationSeconds"], 3.0, delta=0.25)
+            self.assertAlmostEqual(info["srtDurationSeconds"], 45.0)
+
+    def test_render_failure_names_the_step(self):
+        import os
+        with tempfile.TemporaryDirectory() as td:
+            stub = Path(td) / "bin"
+            stub.mkdir()
+            (stub / "npm").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            (stub / "npx").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+            (stub / "npm").chmod(0o755)
+            (stub / "npx").chmod(0o755)
+            srt = Path(td) / "in.srt"
+            srt.write_text(SRT_OK, encoding="utf-8")
+            env = dict(os.environ,
+                       PATH=str(stub) + os.pathsep + os.environ["PATH"])
+            p = subprocess.run(
+                [sys.executable, str(SCRIPTS / "create_video.py"),
+                 "--srt", str(srt), "--palette", "tech",
+                 "--out", str(Path(td) / "proj"), "--render"],
+                capture_output=True, text=True, env=env)
+            self.assertNotEqual(p.returncode, 0)
+            self.assertIn("remotion render", p.stderr)
+            self.assertFalse(
+                (Path(td) / "proj" / "out" / "video.mp4").exists())
+
+    def test_demo_timeline_pipelines_registered(self):
+        starter = ROOT / "templates" / "remotion-starter"
+        demo = json.loads((starter / "src" / "data" / "timeline.json"
+                           ).read_text(encoding="utf-8"))
+        main_tsx = (starter / "src" / "Main.tsx").read_text(encoding="utf-8")
+        for scene in demo["scenes"]:
+            pid = scene["pipeline"]
+            # Keys may be quoted ("hub-spoke":) or bare identifiers (bento:).
+            self.assertRegex(
+                main_tsx, rf'["\']?{pid}["\']?\s*:',
+                f"demo pipeline {pid} not in Main map")
 
 
 if __name__ == "__main__":

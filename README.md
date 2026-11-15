@@ -9,6 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Bengali Ready](https://img.shields.io/badge/Bengali-typography%20safe-059669)](#-bengali-first-class)
 [![Status](https://img.shields.io/badge/status-production--ready-brightgreen)](#-verification)
+[![Tests](https://github.com/zobaerio/zobvia/actions/workflows/tests.yml/badge.svg)](https://github.com/zobaerio/zobvia/actions/workflows/tests.yml)
 
 **One Claude skill. Two superpowers.**
 
@@ -81,7 +82,7 @@ cp -r . ~/.claude/skills/zobvia   # or drop into a project's .claude/skills/
 
 - **Golden rule:** you are the DIRECTOR, the skill is the EDITOR. One question (colour, 6 options with hex + meaning, in your SRT's language). No second question. Ever.
 - **Timeline:** every SRT cue becomes a scene — timing comes from the SRT, content is never invented.
-- **16 style pipelines** (Glossy UI, Dark Tech, Bento Grid, Kinetic Typography, Data Dashboard…) with a proven 60–90 s recipe arc, max 2–3 styles per minute.
+- **16 style pipelines** (Glossy UI, Dark Tech, Bento Grid, Kinetic Typography, Data Dashboard…) with a proven 60–90 s recipe arc, max 2–3 styles per minute — **all 16 implemented as data-driven components** in the starter, plus coded transitions (cut / whip / slide / zoom / fade) and 6 caption presets.
 - **SFX only, no music:** 7 procedurally-generatable sound types (`scripts/sfx_gen.py`), 5–7 events per video, never masking the voice.
 - **Delivery:** Preview = project ZIP + `npm install` / `npx remotion studio` / `npx remotion render Main out/video.mp4`. Re-render = MP4 + ZIP.
 
@@ -93,22 +94,44 @@ builds the complete, ready-to-preview project:
 ```bash
 python3 scripts/create_video.py --srt video.srt --palette tech --out my-video
 # options: --palette "#0EA5E9"  ·  --aspect 9:16  ·  --title "My Video"
+# pro:     --captions karaoke-highlight  ·  --aspects 16:9,9:16,1:1
+#          --voiceover voice.mp3  ·  --render
 ```
 
 What you get in `my-video/`:
 
 - `src/data/timeline.json` — one scene per cue, planned automatically:
-  Kinetic Hook first, Bento / Dashboard / Timeline in the middle
-  (numbers → Dashboard, step words → Timeline), and Statement → Recap →
-  CTA at the end of longer SRTs
+  Kinetic Hook first, Statement → Recap → CTA at the end of longer
+  SRTs, and middle scenes that rotate **within one layout family**
+  chosen from the SRT's dominant signal (step words → flow family:
+  Timeline / Hub-and-Spoke; numbers → grid family: Dashboard / Bento;
+  otherwise the stage family: Glossy UI, 3D Carousel, Glass Cards,
+  Minimal Clean, Gradient Fluid). Every scene also carries a
+  `transition` — about 80% hard cuts, a whip only on a topic change
+  (≥ 1.5 s pause or a section keyword, max 3 per video), slide / zoom /
+  fade sparingly — and the project carries a `captions` preset
 - `src/theme.ts` — your palette, resolved and WCAG-checked
 - `timeline.md` — the human-readable plan (scene table + SFX map)
 - `public/sfx/*.wav` + `src/data/sfx.json` — 5–7 generated SFX events,
   wired into the composition (SFX only, no music)
 - `PROJECT_README.md` — what was generated + the 3 run commands
 
+**Pro flags:** `--captions <id>` picks one of 6 implemented caption
+presets (`word-by-word` default, `karaoke-highlight`, `bilingual-stack`
+— the cue's own Bengali and Latin words stacked, never a fabricated
+translation — `classic-bottom`, `boxed-bold`, `minimal-line`).
+`--aspects 16:9,9:16,1:1` builds one project per aspect into
+`my-video/16x9`, `my-video/9x16`, `my-video/1x1`. `--voiceover
+<file.mp3|wav>` copies your recording into the project, probes it with
+ffprobe, and warns if it drifts from the SRT by more than a second.
+`--render` goes all the way — install, render, QC-check — and fails
+loudly, naming the step, if anything goes wrong.
+
 The starter's `Main` composition is data-driven, so the generated
 project just works: `npm install`, `npx remotion studio`, done.
+A real converter output is committed at
+[`examples/generated-project/`](examples/generated-project/) — browse
+it to see exactly what the command produces.
 
 Two companion tools round out the converter:
 
@@ -279,19 +302,26 @@ client brief template, and freelancer pricing guidance (Bangladesh + internation
 This repo ships with a test suite — not claims:
 
 ```bash
-python3 -m unittest discover -s tests     # 21 tests: SRT, palettes, SFX WAVs, access gate, converter, transcribe, QC
+python3 -m unittest discover -s tests     # 27 tests: SRT, palettes, SFX WAVs, access gate, converter, transcribe, QC, planner/captions/aspects/voiceover/render
 python3 scripts/check_tools.py            # honest tool report for your machine
 ```
+
+CI (`.github/workflows/tests.yml`) runs the Python suite and the
+starter typecheck on every push and pull request.
 
 Verified end-to-end: SRT parsing (incl. Bengali + malformed blocks), palette
 contrast maths, WAV generation (headers/durations), `extract.py` on a real clip
 (scene-cut detection; transcription honestly *skipped with a recorded reason*
 when Whisper isn't installed — never faked), the one-command converter on the
-Bengali and English example SRTs (10 scenes, 7 SFX events, 45 s each),
+Bengali and English example SRTs (10 scenes, 7 SFX events, 45 s each), the
+family planner on a 24-cue SRT (5 stage pipelines in rotation, 83% hard cuts,
+ending trio intact), multi-aspect generation (16:9 / 9:16 / 1:1 dimensions),
+voiceover drift warning on a mismatched recording, `--render` failure
+reporting with stubbed tools (names the failing step, never fakes success),
 `qc_check.py` against a real ffmpeg-generated clip, and `tsc --noEmit` on both
-the Remotion starter and a converter-generated project. A still-frame render
-requires direct access to Google Fonts from the rendering machine; see
-`CHANGELOG.md` for the exact verification log.
+the Remotion starter (all 16 pipeline components) and a converter-generated
+project. A still-frame render requires direct access to Google Fonts from
+the rendering machine; see `CHANGELOG.md` for the exact verification log.
 
 ## 📁 Structure
 
@@ -301,8 +331,8 @@ zobvia/
 ├── references/               # 27 files — pipelines, captions, hooks, genres, platforms…
 ├── scripts/                  # extract · srt_parse · color_palette · create_video · sfx_gen · check_tools · style_stats · access_check · transcribe · qc_check · render_helper.sh
 ├── assets/                   # animated demo banner (demo.svg)
-├── templates/remotion-starter/  # working Remotion 4 project — data-driven Main + PreviewAudio, 7 scene pipelines
-├── examples/                 # Bengali + English example SRTs → generated timeline + filled Dark Tech style skill
+├── templates/remotion-starter/  # working Remotion 4 project — data-driven Main + PreviewAudio, all 16 pipeline components, transitions, caption presets
+├── examples/                 # Bengali + English example SRTs → generated timeline + filled Dark Tech style skill + generated-project/ (real converter output)
 └── tests/                    # unittest suite for the scripts
 ```
 

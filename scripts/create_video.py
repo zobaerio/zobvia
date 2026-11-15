@@ -3,28 +3,73 @@
 
 Usage:
     python3 scripts/create_video.py --srt <file.srt> --palette "<tone|#hex>" \
-        --out <dir> [--aspect 16:9|9:16|1:1] [--title "..."]
+        --out <dir> [--aspect 16:9|9:16|1:1 | --aspects 16:9,9:16,1:1] \
+        [--title "..."] [--captions <preset-id>] \
+        [--voiceover <file.mp3|file.wav>] [--render]
 
 What it does (deterministically — same input, same plan):
   1. Parses the SRT with srt_parse.parse_srt (zero cues -> exit 2).
-  2. Plans scenes: cue 1 = Kinetic Hook; middle cues rotate through
-     Bento / Dashboard / Timeline (a cue whose text contains a number is
-     planned as Dashboard, a cue containing a step word — first/then/
-     next/finally or প্রথমে/তারপর/এরপর/শেষে — as Timeline; otherwise the
-     rotation advances). Never more than 3 distinct middle styles.
-     When there are >= 6 cues, the last three cues are Statement Card ->
-     Recap Grid -> CTA; shorter SRTs end with a single CTA cue.
+  2. Plans scenes with a family-based planner: cue 1 = Kinetic Hook;
+     when there are >= 6 cues, the last three cues are Statement Card ->
+     Recap Grid -> CTA; shorter SRTs (2-5 cues) end with a single CTA
+     cue; a single cue is hook only. The remaining middle cues are
+     assigned inside ONE layout family chosen from the middle cues:
+       - Count middle cues containing a number (NUMBER_RE) = num_count
+         and containing a step word (STEP_WORDS) = step_count.
+       - If middles exist and step_count >= num_count and
+         step_count * 2 >= len(middles) -> "flow".
+       - Elif num_count > 0 and num_count * 2 >= len(middles) -> "grid".
+       - Else -> "stage".
+     Within-family assignment:
+       - grid: number cue -> dashboard, else bento
+         (family middles rotate [bento, dashboard]).
+       - flow: step-word cue -> timeline, else hub-spoke
+         (family middles rotate [timeline, hub-spoke]).
+       - stage: rotate through [glossy-ui, carousel-3d, glass-cards,
+         minimal-clean, gradient-fluid]; a cue with >= 2 commas
+         (list-like) -> carousel-3d and does not advance the rotation.
+     The free family (dark-tech / before-after / flat-vector /
+     line-draw) is not auto-selected by the planner; those pipelines
+     remain available to hand-authored timelines.
+     Every scene also gains a "transition": scene 0 is "none"; a topic
+     change (gap >= 1.5s from the previous cue, or a section keyword)
+     is "whip" (at most 3 per video, further topic changes are
+     "zoom"); otherwise a pipeline change at 0-based index % 6 == 5
+     cycles slide/zoom/fade; everything else is "cut".
   3. Copies templates/remotion-starter/ into --out (no node_modules/out),
-     then writes src/data/timeline.json, src/theme.ts (palette resolved
-     through color_palette.py, WCAG-checked), timeline.md,
+     then writes src/data/timeline.json (with top-level "family" and
+     "captions", plus "voiceover" when --voiceover is given),
+     src/theme.ts (palette resolved through color_palette.py,
+     WCAG-checked), timeline.md (with a Transition column),
      public/sfx/*.wav + src/data/sfx.json (5-7 SFX events at scene
      boundaries, generated with sfx_gen.py's generators), and
      PROJECT_README.md with the 3 delivery commands.
+
+Extra flags:
+  --captions <preset-id>  One of: word-by-word (default),
+      karaoke-highlight, bilingual-stack, classic-bottom, boxed-bold,
+      minimal-line. Invalid -> exit 2. Recorded in timeline.json and
+      PROJECT_README.md.
+  --aspect / --aspects    Mutually exclusive. --aspect keeps the
+      single-project output at --out itself (effective default 16:9).
+      --aspects takes a comma-separated subset of 16:9,9:16,1:1 and
+      generates one project per aspect into subdirectories of --out
+      named with ":" replaced by "x" (e.g. <out>/16x9).
+  --voiceover <file>      .mp3 or .wav only (else exit 2). Copied into
+      each generated project's public/ as voiceover.mp3 / voiceover.wav.
+      For .mp3, HAS_VOICEOVER is flipped to true in src/timing.ts.
+      Duration is probed with ffprobe and compared with the SRT total;
+      a drift > 1.0s prints a "WARNING: voiceover duration" line.
+  --render                After generation, render the FIRST generated
+      project only: "npm install", then "npx remotion render Main
+      out/video.mp4", then a qc_check.py pass. Any step failure prints
+      "RENDER FAILED at step: <step> — <reason>" to stderr and exits 1.
 """
 import argparse
 import json
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -42,15 +87,38 @@ ASPECTS = {
 }
 
 STARTER = Path(__file__).resolve().parent.parent / "templates" / "remotion-starter"
+SCRIPTS_DIR = Path(__file__).resolve().parent
 
 # Pipeline ids — must match the component map in the starter's Main.tsx.
 HOOK = "kinetic-hook"
+GLOSSY_UI = "glossy-ui"
+CAROUSEL_3D = "carousel-3d"
+DARK_TECH = "dark-tech"
+GLASS_CARDS = "glass-cards"
+MINIMAL_CLEAN = "minimal-clean"
+GRADIENT_FLUID = "gradient-fluid"
+STATEMENT = "statement"
 BENTO = "bento"
 DASHBOARD = "dashboard"
-TIMELINE = "timeline"
-STATEMENT = "statement"
 RECAP = "recap"
+TIMELINE = "timeline"
+HUB_SPOKE = "hub-spoke"
+BEFORE_AFTER = "before-after"
+FLAT_VECTOR = "flat-vector"
+LINE_DRAW = "line-draw"
 CTA = "cta"
+
+# Layout families (see references/style-pipelines.md). The planner
+# auto-selects grid / stage / flow only. The "free" family
+# (dark-tech / before-after / flat-vector / line-draw) is NOT
+# auto-selected by the planner; those pipelines remain available to
+# hand-authored timelines.
+GRID_MIDDLES = [BENTO, DASHBOARD]
+STAGE_ROTATION = [GLOSSY_UI, CAROUSEL_3D, GLASS_CARDS, MINIMAL_CLEAN, GRADIENT_FLUID]
+FLOW_MIDDLES = [TIMELINE, HUB_SPOKE]
+FREE_FAMILY = [DARK_TECH, BEFORE_AFTER, FLAT_VECTOR, LINE_DRAW]
+
+# Backwards-compatible alias (previous rotation list).
 MIDDLE_ROTATION = [BENTO, DASHBOARD, TIMELINE]
 
 NUMBER_RE = re.compile(r"[0-9\u09e6-\u09ef]")  # ASCII + Bengali digits
@@ -58,6 +126,22 @@ STEP_WORDS = (
     "first", "then", "next", "finally", "step",
     "প্রথমে", "তারপর", "এরপর", "শেষে", "ধাপ",
 )
+
+SECTION_KEYWORDS = (
+    "chapter", "section", "part ", "next part",
+    "এবার", "অধ্যায়", "পরের অংশ",
+)
+
+TRANSITION_CYCLE = ["slide", "zoom", "fade"]
+
+CAPTION_PRESETS = [
+    "word-by-word",
+    "karaoke-highlight",
+    "bilingual-stack",
+    "classic-bottom",
+    "boxed-bold",
+    "minimal-line",
+]
 
 # SFX locked to scene roles (see references/sfx-library.md mapping).
 ROLE_SFX = {HOOK: "whoosh", STATEMENT: "thud", RECAP: "pluck", CTA: "chime"}
@@ -170,7 +254,39 @@ def resolve_palette(spec):
 # ---------------------------------------------------------------- planning
 
 def plan_scenes(cues):
-    """Assign a pipeline to every cue. Returns a list of scene dicts."""
+    """Assign a pipeline and a transition to every cue.
+
+    Returns (scenes, family) where scenes is a list of scene dicts
+    (each with "pipeline" and "transition") and family is one of
+    "grid", "stage" or "flow".
+
+    Family selection (deterministic, from the middle cues only):
+      num_count  = middle cues containing a number (NUMBER_RE)
+      step_count = middle cues containing a step word (STEP_WORDS)
+      - middles exist and step_count >= num_count and
+        step_count * 2 >= len(middles) -> "flow"
+      - elif num_count > 0 and num_count * 2 >= len(middles) -> "grid"
+      - else -> "stage"
+
+    Within-family assignment:
+      - grid: number cue -> dashboard, else bento.
+      - flow: step-word cue -> timeline, else hub-spoke.
+      - stage: rotate through STAGE_ROTATION; a cue with >= 2 commas
+        -> carousel-3d and does not advance the rotation.
+
+    Note: the "free" family (dark-tech / before-after / flat-vector /
+    line-draw) is not auto-selected here; those pipelines remain
+    available to hand-authored timelines.
+
+    Hook / ending are fixed: cue 1 = kinetic-hook; >= 6 cues: last
+    three = statement, recap, cta; 2-5 cues: last = cta; 1 cue: hook
+    only.
+
+    Transitions: scene 0 = "none"; topic change (gap >= 1.5s or a
+    section keyword) = "whip" for at most 3 scenes, further topic
+    changes = "zoom"; else a pipeline change at 0-based index
+    % 6 == 5 cycles slide/zoom/fade; else "cut".
+    """
     n = len(cues)
     pipelines = [None] * n
     pipelines[0] = HOOK
@@ -184,17 +300,43 @@ def plan_scenes(cues):
         middle = list(range(1, n - 1))
     else:
         middle = []
-    rotation = 0
-    for i in middle:
-        text = cues[i]["text"]
-        lowered = text.lower()
-        if NUMBER_RE.search(text):
-            pipelines[i] = DASHBOARD
-        elif any(w in lowered for w in STEP_WORDS):
-            pipelines[i] = TIMELINE
-        else:
-            pipelines[i] = MIDDLE_ROTATION[rotation % len(MIDDLE_ROTATION)]
-            rotation += 1
+
+    # --- family selection from the middle cues ---
+    num_count = sum(1 for i in middle if NUMBER_RE.search(cues[i]["text"]))
+    step_count = sum(
+        1 for i in middle
+        if any(w in cues[i]["text"].lower() for w in STEP_WORDS))
+    if middle and step_count >= num_count and step_count * 2 >= len(middle):
+        family = "flow"
+    elif num_count > 0 and num_count * 2 >= len(middle):
+        family = "grid"
+    else:
+        family = "stage"
+
+    # --- within-family assignment ---
+    if family == "grid":
+        for i in middle:
+            if NUMBER_RE.search(cues[i]["text"]):
+                pipelines[i] = DASHBOARD
+            else:
+                pipelines[i] = BENTO
+    elif family == "flow":
+        for i in middle:
+            lowered = cues[i]["text"].lower()
+            if any(w in lowered for w in STEP_WORDS):
+                pipelines[i] = TIMELINE
+            else:
+                pipelines[i] = HUB_SPOKE
+    else:  # stage
+        rotation = 0
+        for i in middle:
+            text = cues[i]["text"]
+            if text.count(",") >= 2:
+                pipelines[i] = CAROUSEL_3D
+            else:
+                pipelines[i] = STAGE_ROTATION[rotation % len(STAGE_ROTATION)]
+                rotation += 1
+
     scenes = []
     for cue, pipeline in zip(cues, pipelines):
         scenes.append({
@@ -204,7 +346,31 @@ def plan_scenes(cues):
             "text": cue["text"],
             "pipeline": pipeline,
         })
-    return scenes
+
+    # --- transitions ---
+    whip_count = 0
+    cycle_idx = 0
+    for pos, scene in enumerate(scenes):
+        if pos == 0:
+            scene["transition"] = "none"
+            continue
+        cue = cues[pos]
+        prev_cue = cues[pos - 1]
+        gap = cue["start"] - prev_cue["end"]
+        lowered = cue["text"].lower()
+        is_topic = gap >= 1.5 or any(kw in lowered for kw in SECTION_KEYWORDS)
+        if is_topic:
+            if whip_count < 3:
+                scene["transition"] = "whip"
+                whip_count += 1
+            else:
+                scene["transition"] = "zoom"
+        elif scene["pipeline"] != scenes[pos - 1]["pipeline"] and pos % 6 == 5:
+            scene["transition"] = TRANSITION_CYCLE[cycle_idx % len(TRANSITION_CYCLE)]
+            cycle_idx += 1
+        else:
+            scene["transition"] = "cut"
+    return scenes, family
 
 
 def plan_sfx(scenes):
@@ -258,6 +424,37 @@ def plan_sfx(scenes):
     return events
 
 
+# ---------------------------------------------------------------- voiceover
+
+def probe_voiceover_duration(path):
+    """Probe duration (seconds, float) with ffprobe, or None.
+
+    ffprobe missing or probe failure -> None plus a printed note
+    (not an error).
+    """
+    if shutil.which("ffprobe") is None:
+        print("Note: ffprobe not found; voiceover duration unknown.")
+        return None
+    try:
+        proc = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "json", str(path)],
+            capture_output=True, text=True)
+    except OSError as e:
+        print(f"Note: could not probe voiceover duration ({e}); duration unknown.")
+        return None
+    if proc.returncode != 0:
+        print("Note: ffprobe could not probe voiceover duration; duration unknown.")
+        return None
+    try:
+        data = json.loads(proc.stdout)
+        raw = data.get("format", {}).get("duration")
+        return round(float(raw), 3) if raw is not None else None
+    except (json.JSONDecodeError, ValueError, TypeError):
+        print("Note: could not parse ffprobe voiceover duration; duration unknown.")
+        return None
+
+
 # ---------------------------------------------------------------- outputs
 
 def render_theme_ts(theme):
@@ -298,7 +495,8 @@ export const theme: Theme = {{
 '''
 
 
-def render_timeline_md(title, scenes, total, theme, aspect, sfx_events):
+def render_timeline_md(title, scenes, total, theme, aspect, sfx_events,
+                       family=None, captions=None):
     lines = [
         f"# Timeline — {title}",
         "",
@@ -307,15 +505,22 @@ def render_timeline_md(title, scenes, total, theme, aspect, sfx_events):
         f"- **Aspect:** {aspect}",
         f"- **Palette:** {theme['label']} — bg `{theme['bg']}`, accent `{theme['accent']}`",
         f"- **SFX events:** {len(sfx_events)} (SFX only, no music)",
+    ]
+    if family is not None:
+        lines.append(f"- **Family:** {family}")
+    if captions is not None:
+        lines.append(f"- **Captions:** {captions}")
+    lines += [
         "",
-        "| # | Start | End | Pipeline | Text |",
-        "|---|-------|-----|----------|------|",
+        "| # | Start | End | Pipeline | Transition | Text |",
+        "|---|-------|-----|----------|------------|------|",
     ]
     for s in scenes:
         text = s["text"].replace("|", "\\|").replace("\n", "<br>")
         lines.append(
             f"| {s['index']} | {srt_parse.fmt_time(s['start'])} | "
-            f"{srt_parse.fmt_time(s['end'])} | {s['pipeline']} | {text} |")
+            f"{srt_parse.fmt_time(s['end'])} | {s['pipeline']} | "
+            f"{s.get('transition', 'cut')} | {text} |")
     lines += ["", "## SFX map", "",
               "| At | File | Scene |", "|----|------|-------|"]
     for e in sfx_events:
@@ -325,7 +530,49 @@ def render_timeline_md(title, scenes, total, theme, aspect, sfx_events):
     return "\n".join(lines)
 
 
-def render_project_readme(title, scenes, total, theme, aspect, sfx_events):
+def render_project_readme(title, scenes, total, theme, aspect, sfx_events,
+                          captions="word-by-word", family=None,
+                          voiceover_info=None):
+    # Voiceover section: detailed when a voiceover was supplied,
+    # otherwise the original optional paragraph.
+    if voiceover_info is not None:
+        vo_file = voiceover_info["file"]
+        vo_dur = voiceover_info.get("durationSeconds")
+        srt_dur = voiceover_info.get("srtDurationSeconds", total)
+        drift = voiceover_info.get("driftSeconds")
+        vo_dur_str = f"{vo_dur:.3f} seconds" if vo_dur is not None else "unknown (ffprobe unavailable or probe failed)"
+        drift_str = f"{drift:.3f} seconds" if drift is not None else "unknown"
+        voiceover_section = (
+            f"## Voiceover\n\n"
+            f"- **File:** `public/{vo_file}`\n"
+            f"- **Duration:** {vo_dur_str}\n"
+            f"- **SRT duration:** {srt_dur:.3f} seconds\n"
+            f"- **Drift:** {drift_str}\n"
+        )
+        if drift is not None and abs(drift) > 1.0:
+            voiceover_section += (
+                f"\nWARNING: voiceover duration differs from SRT duration "
+                f"by {abs(drift):.3f} seconds.\n"
+            )
+        if vo_file.endswith(".wav"):
+            voiceover_section += (
+                f"\nNote: PreviewAudio plays `voiceover.mp3`, so a .wav "
+                f"voiceover should be converted or renamed to "
+                f"`voiceover.mp3` by the user before previewing with "
+                f"PreviewAudio.\n"
+            )
+        else:
+            voiceover_section += (
+                f"\n`HAS_VOICEOVER` has been set to `true` in "
+                f"`src/timing.ts` for this project.\n"
+            )
+    else:
+        voiceover_section = (
+            "## Voiceover (optional)\n\n"
+            "Drop a real recording at `public/voiceover.mp3`, set `HAS_VOICEOVER = true`\n"
+            "in `src/timing.ts`, and preview with the `PreviewAudio` composition.\n"
+        )
+    family_line = f"- **Family:** {family}\n" if family is not None else ""
     return f'''# {title}
 
 A Remotion motion-graphics project generated by **zobvia**
@@ -334,6 +581,7 @@ A Remotion motion-graphics project generated by **zobvia**
 - **Scenes:** {len(scenes)} (one per SRT cue) — plan in `timeline.md`
 - **Duration:** {total:.1f} seconds @ {FPS} fps
 - **Aspect / size:** {aspect}
+{family_line}- **Captions:** {captions}
 - **Palette:** {theme["label"]} — bg `{theme["bg"]}`, accent `{theme["accent"]}`
 - **SFX:** {len(sfx_events)} generated events in `public/sfx/` (SFX only, no music)
 - **Data:** scenes live in `src/data/timeline.json`, sounds in `src/data/sfx.json`
@@ -350,16 +598,150 @@ npx remotion render Main out/video.mp4
 - `npx remotion studio` — preview and scrub the video in your browser.
 - `npx remotion render Main out/video.mp4` — render the final MP4.
 
-## Voiceover (optional)
-
-Drop a real recording at `public/voiceover.mp3`, set `HAS_VOICEOVER = true`
-in `src/timing.ts`, and preview with the `PreviewAudio` composition.
-
+{voiceover_section}
 ## Editing
 
 Change scene text/timing in `src/data/timeline.json`, colours in
 `src/theme.ts`, then re-render. Scene layouts live in `src/scenes/`.
 '''
+
+
+# ---------------------------------------------------------------- render
+
+def _render_fail(step, reason):
+    print(f"RENDER FAILED at step: {step} — {reason}", file=sys.stderr)
+    return 1
+
+
+def run_render(project_dir, width, height, total):
+    """Render one generated project. Returns 0 on success, 1 on failure."""
+    # Step: npm install
+    print("Render step: npm install")
+    if shutil.which("npm") is None:
+        return _render_fail("npm install", "npm not found")
+    try:
+        proc = subprocess.run(
+            ["npm", "install"], cwd=str(project_dir),
+            capture_output=True, text=True)
+    except OSError as e:
+        return _render_fail("npm install", str(e))
+    if proc.returncode != 0:
+        return _render_fail(
+            "npm install", f"npm install exited with code {proc.returncode}")
+
+    # Step: remotion render
+    print("Render step: remotion render")
+    try:
+        proc = subprocess.run(
+            ["npx", "remotion", "render", "Main", "out/video.mp4"],
+            cwd=str(project_dir), capture_output=True, text=True)
+    except OSError as e:
+        return _render_fail("remotion render", str(e))
+    if proc.returncode != 0:
+        return _render_fail(
+            "remotion render", f"remotion render exited with code {proc.returncode}")
+    mp4 = project_dir / "out" / "video.mp4"
+    if not mp4.is_file():
+        return _render_fail("remotion render", "out/video.mp4 not found after render")
+
+    # Step: qc check
+    print("Render step: qc check")
+    qc_script = SCRIPTS_DIR / "qc_check.py"
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(qc_script), "--file", str(mp4),
+             "--expect-width", str(width), "--expect-height", str(height),
+             "--expect-fps", "30", "--expect-duration", str(total)],
+            capture_output=True, text=True)
+    except OSError as e:
+        return _render_fail("qc check", str(e))
+    qc_output = (proc.stdout or "").strip()
+    if qc_output:
+        print(qc_output)
+    if proc.returncode != 0:
+        reason = f"qc_check exited with code {proc.returncode}"
+        if proc.stderr and proc.stderr.strip():
+            reason = proc.stderr.strip().splitlines()[-1][:120]
+        return _render_fail("qc check", reason)
+    # Success only here: MP4 exists and QC passed.
+    print(f"Rendered: {mp4}")
+    if qc_output:
+        # QC summary line = last line of qc output (or full output).
+        print(f"QC: {qc_output.splitlines()[-1] if qc_output else 'passed'}")
+    else:
+        print("QC: passed")
+    return 0
+
+
+# ---------------------------------------------------------------- generation
+
+def generate_project(out_dir, title, scenes, family, captions, total,
+                     theme, aspect, width, height, sfx_events,
+                     voiceover_info=None, voiceover_src=None):
+    """Write one project into out_dir. Raises OSError on write failure."""
+    shutil.copytree(
+        STARTER, out_dir, dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("node_modules", "out"))
+    (out_dir / "src" / "data").mkdir(parents=True, exist_ok=True)
+    timeline = {
+        "title": title,
+        "fps": FPS,
+        "width": width,
+        "height": height,
+        "totalDuration": total,
+        "family": family,
+        "captions": captions,
+        "scenes": scenes,
+    }
+    if voiceover_info is not None:
+        timeline["voiceover"] = voiceover_info
+    (out_dir / "src" / "data" / "timeline.json").write_text(
+        json.dumps(timeline, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
+    (out_dir / "src" / "data" / "sfx.json").write_text(
+        json.dumps({"events": [
+            {"file": e["file"], "atSeconds": e["atSeconds"],
+             "sceneIndex": e["sceneIndex"]} for e in sfx_events]},
+            ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
+    (out_dir / "src" / "theme.ts").write_text(
+        render_theme_ts(theme), encoding="utf-8")
+    (out_dir / "timeline.md").write_text(
+        render_timeline_md(title, scenes, total, theme, aspect, sfx_events,
+                           family=family, captions=captions),
+        encoding="utf-8")
+    (out_dir / "PROJECT_README.md").write_text(
+        render_project_readme(title, scenes, total, theme, aspect, sfx_events,
+                              captions=captions, family=family,
+                              voiceover_info=voiceover_info),
+        encoding="utf-8")
+    sfx_dir = out_dir / "public" / "sfx"
+    sfx_dir.mkdir(parents=True, exist_ok=True)
+    gens = sfx_gen.NP_GENS if sfx_gen.HAS_NUMPY else sfx_gen.PY_GENS
+    for sound in sorted({e["sound"] for e in sfx_events}):
+        samples = sfx_gen.normalise(gens[sound]())
+        sfx_gen.write_wav(sfx_dir / f"{sound}.wav", samples)
+    # Voiceover copy (+ timing flip for .mp3).
+    if voiceover_info is not None and voiceover_src is not None:
+        dest = out_dir / "public" / voiceover_info["file"]
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(str(voiceover_src), str(dest))
+        if voiceover_info["file"] == "voiceover.mp3":
+            timing_path = out_dir / "src" / "timing.ts"
+            if timing_path.is_file():
+                content = timing_path.read_text(encoding="utf-8")
+                needle = "export const HAS_VOICEOVER = false;"
+                if needle in content:
+                    timing_path.write_text(
+                        content.replace(
+                            needle, "export const HAS_VOICEOVER = true;"),
+                        encoding="utf-8")
+                else:
+                    print("Warning: HAS_VOICEOVER pattern not found in "
+                          f"{timing_path}; leaving timing.ts unchanged.")
+            else:
+                print(f"Warning: timing.ts not found at {timing_path}; "
+                      "cannot set HAS_VOICEOVER.")
 
 
 def main(argv=None):
@@ -369,9 +751,57 @@ def main(argv=None):
     p.add_argument("--palette", required=True,
                    help="Palette tone name (see color_palette.py) or a #RRGGBB hex")
     p.add_argument("--out", required=True, help="Output project directory")
-    p.add_argument("--aspect", choices=sorted(ASPECTS), default="16:9")
+    aspect_group = p.add_mutually_exclusive_group()
+    aspect_group.add_argument("--aspect", choices=sorted(ASPECTS), default=None)
+    aspect_group.add_argument("--aspects", default=None,
+                              help="Comma-separated aspects, e.g. 16:9,9:16")
     p.add_argument("--title", default=None, help="Project title (default: SRT file stem)")
+    p.add_argument("--captions", default="word-by-word",
+                   help="Caption preset id (default: word-by-word)")
+    p.add_argument("--voiceover", default=None,
+                   help="Voiceover audio file (.mp3 or .wav)")
+    p.add_argument("--render", action="store_true",
+                   help="Render the first generated project after generation")
     args = p.parse_args(argv)
+
+    # --- captions validation (exit 2, listing valid ids) ---
+    if args.captions not in CAPTION_PRESETS:
+        print(
+            f"Error: invalid captions preset '{args.captions}'. "
+            f"Valid presets: {', '.join(CAPTION_PRESETS)}",
+            file=sys.stderr)
+        return 2
+
+    # --- aspects validation / resolution ---
+    if args.aspects is not None:
+        aspects_list = [part.strip() for part in args.aspects.split(",")]
+        if not aspects_list or any(a not in ASPECTS for a in aspects_list):
+            print(
+                f"Error: invalid --aspects entry in '{args.aspects}'. "
+                f"Valid aspects: {', '.join(sorted(ASPECTS))}",
+                file=sys.stderr)
+            return 2
+        out_base = Path(args.out)
+        targets = [(asp, out_base / asp.replace(":", "x")) for asp in aspects_list]
+    else:
+        effective_aspect = args.aspect if args.aspect is not None else "16:9"
+        aspects_list = [effective_aspect]
+        targets = [(effective_aspect, Path(args.out))]
+
+    # --- voiceover validation (extension, before generation) ---
+    voiceover_src = None
+    voiceover_ext = None
+    if args.voiceover is not None:
+        voiceover_src = Path(args.voiceover)
+        voiceover_ext = voiceover_src.suffix.lower()
+        if voiceover_ext not in (".mp3", ".wav"):
+            print(
+                f"Error: voiceover file must be .mp3 or .wav: {voiceover_src}",
+                file=sys.stderr)
+            return 2
+        if not voiceover_src.is_file():
+            print(f"Error: voiceover file not found: {voiceover_src}", file=sys.stderr)
+            return 2
 
     srt_path = Path(args.srt)
     if not srt_path.is_file():
@@ -398,69 +828,82 @@ def main(argv=None):
         print(f"Error: {e}", file=sys.stderr)
         return 2
 
-    out_dir = Path(args.out)
-    if out_dir.exists() and any(out_dir.iterdir()):
-        print(f"Error: output directory is not empty: {out_dir}", file=sys.stderr)
-        return 2
     if not STARTER.is_dir():
         print(f"Error: Remotion starter not found at {STARTER}", file=sys.stderr)
         return 2
 
+    # Non-empty check applies per target project dir.
+    for _asp, target_dir in targets:
+        if target_dir.exists() and any(target_dir.iterdir()):
+            print(f"Error: output directory is not empty: {target_dir}", file=sys.stderr)
+            return 2
+
     title = args.title or srt_path.stem
-    width, height = ASPECTS[args.aspect]
-    scenes = plan_scenes(data["cues"])
+    scenes, family = plan_scenes(data["cues"])
     total = data["total_duration"]
     sfx_events = plan_sfx(scenes)
 
-    try:
-        shutil.copytree(
-            STARTER, out_dir, dirs_exist_ok=True,
-            ignore=shutil.ignore_patterns("node_modules", "out"))
-        (out_dir / "src" / "data").mkdir(parents=True, exist_ok=True)
-        timeline = {
-            "title": title,
-            "fps": FPS,
-            "width": width,
-            "height": height,
-            "totalDuration": total,
-            "scenes": scenes,
+    # --- voiceover probing / info (once) ---
+    voiceover_info = None
+    if voiceover_src is not None:
+        vo_filename = "voiceover.mp3" if voiceover_ext == ".mp3" else "voiceover.wav"
+        vo_duration = probe_voiceover_duration(voiceover_src)
+        srt_duration = round(float(total), 3)
+        if vo_duration is not None:
+            drift = round(vo_duration - srt_duration, 3)
+        else:
+            drift = None
+        voiceover_info = {
+            "file": vo_filename,
+            "durationSeconds": vo_duration,
+            "srtDurationSeconds": srt_duration,
+            "driftSeconds": drift,
         }
-        (out_dir / "src" / "data" / "timeline.json").write_text(
-            json.dumps(timeline, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8")
-        (out_dir / "src" / "data" / "sfx.json").write_text(
-            json.dumps({"events": [
-                {"file": e["file"], "atSeconds": e["atSeconds"],
-                 "sceneIndex": e["sceneIndex"]} for e in sfx_events]},
-                ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8")
-        (out_dir / "src" / "theme.ts").write_text(
-            render_theme_ts(theme), encoding="utf-8")
-        (out_dir / "timeline.md").write_text(
-            render_timeline_md(title, scenes, total, theme, args.aspect, sfx_events),
-            encoding="utf-8")
-        (out_dir / "PROJECT_README.md").write_text(
-            render_project_readme(title, scenes, total, theme, args.aspect, sfx_events),
-            encoding="utf-8")
-        sfx_dir = out_dir / "public" / "sfx"
-        sfx_dir.mkdir(parents=True, exist_ok=True)
-        gens = sfx_gen.NP_GENS if sfx_gen.HAS_NUMPY else sfx_gen.PY_GENS
-        for sound in sorted({e["sound"] for e in sfx_events}):
-            samples = sfx_gen.normalise(gens[sound]())
-            sfx_gen.write_wav(sfx_dir / f"{sound}.wav", samples)
-    except OSError as e:
-        print(f"Error: cannot write project to {out_dir}: {e}", file=sys.stderr)
-        return 2
+        if vo_filename.endswith(".wav"):
+            print("Note: voiceover is .wav — PreviewAudio plays voiceover.mp3, "
+                  "so a .wav should be converted or renamed to voiceover.mp3 "
+                  "by the user before previewing with PreviewAudio.")
+        if vo_duration is not None and abs(drift) > 1.0:
+            print(f"WARNING: voiceover duration ({vo_duration:.3f}s) differs from "
+                  f"SRT duration ({srt_duration:.3f}s) by {abs(drift):.3f}s.")
 
-    print(f"Project created: {out_dir}")
-    print(f"  Title:   {title}")
-    print(f"  Scenes:  {len(scenes)} (one per SRT cue)")
-    print(f"  Duration: {total:.1f}s @ {FPS} fps")
-    print(f"  Aspect:  {args.aspect} ({width}x{height})")
-    print(f"  Palette: {theme['label']} — bg {theme['bg']}, accent {theme['accent']}")
-    print(f"  SFX:     {len(sfx_events)} events "
-          f"({', '.join(sorted({e['sound'] for e in sfx_events}))})")
-    print("  Next:    npm install && npx remotion studio")
+    # --- generate one project per target ---
+    generated = []  # list of (aspect, out_dir, width, height)
+    for aspect, out_dir in targets:
+        width, height = ASPECTS[aspect]
+        try:
+            generate_project(
+                out_dir, title, scenes, family, args.captions, total,
+                theme, aspect, width, height, sfx_events,
+                voiceover_info=voiceover_info, voiceover_src=voiceover_src)
+        except OSError as e:
+            print(f"Error: cannot write project to {out_dir}: {e}", file=sys.stderr)
+            return 2
+        generated.append((aspect, out_dir, width, height))
+        print(f"Project created: {out_dir}")
+        print(f"  Title:   {title}")
+        print(f"  Scenes:  {len(scenes)} (one per SRT cue)")
+        print(f"  Family:  {family}")
+        print(f"  Captions: {args.captions}")
+        print(f"  Duration: {total:.1f}s @ {FPS} fps")
+        print(f"  Aspect:  {aspect} ({width}x{height})")
+        print(f"  Palette: {theme['label']} — bg {theme['bg']}, accent {theme['accent']}")
+        print(f"  SFX:     {len(sfx_events)} events "
+              f"({', '.join(sorted({e['sound'] for e in sfx_events}))})")
+        if voiceover_info is not None:
+            vo_dur = voiceover_info["durationSeconds"]
+            vo_dur_str = f"{vo_dur:.3f}s" if vo_dur is not None else "unknown"
+            print(f"  Voiceover: {voiceover_info['file']} (duration {vo_dur_str}, "
+                  f"SRT {voiceover_info['srtDurationSeconds']:.3f}s, "
+                  f"drift {voiceover_info['driftSeconds']})")
+            if voiceover_info["file"].endswith(".wav"):
+                print("  Note: PreviewAudio plays voiceover.mp3 — convert or "
+                      "rename the .wav to voiceover.mp3 before previewing.")
+        print("  Next:    npm install && npx remotion studio")
+
+    if args.render:
+        first_aspect, first_dir, first_w, first_h = generated[0]
+        return run_render(first_dir, first_w, first_h, total)
     return 0
 
 

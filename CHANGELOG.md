@@ -1,5 +1,81 @@
 # Changelog
 
+## 1.2.0 — 2026-11-15
+
+The professional release: every pipeline in code, a family-respecting
+planner, coded transitions and captions, and pro converter flags.
+
+### Added
+- **All 16 style pipelines implemented as data-driven components** in
+  the starter (`src/scenes/`), registered in `Main`'s component map
+  (unknown ids still fall back to Statement Card). The 10 new ones:
+  Glossy UI Mockup (`glossy-ui`, browser-frame stage), 3D Carousel
+  (`carousel-3d`, perspective arc with a cycling hero card), Dark Tech
+  (`dark-tech`, grid-lined stage with a terminal panel — a layout, not
+  just a theme: the reference defines it as "stage with terminal/code
+  panels"; body text stays in the Bengali-safe theme font, no
+  monospace), Glass Cards (`glass-cards`, frosted cards over blurred
+  colour blobs), Minimal Clean (`minimal-clean`, the light look —
+  light surface / dark ink from the theme, one centred element),
+  Gradient Fluid (`gradient-fluid`, drifting blurred colour field),
+  Hub-and-Spoke (`hub-spoke`, SVG spokes draw on to chunk satellites),
+  Before/After Split (`before-after`, the cue's own halves, dim vs
+  tinted, divider reveal), Flat Vector/Isometric (`flat-vector`, flat
+  primitives + chunk label chips), Line-Draw/Doodle (`line-draw`,
+  paper ground, dashed sketch box, draw-on squiggle, ticking sketch
+  rows). Content still comes only from the SRT cue in every component.
+- **Transitions in code** (`src/components/transitions.tsx`):
+  `SceneTransition` wraps each incoming scene per its `transition`
+  value — cut/none (untouched), fade, slide, zoom, whip (fast slide
+  with a decaying horizontal blur).
+- **6 caption presets implemented** (`src/components/CaptionRenderer.tsx`,
+  word onsets distributed evenly across the scene, whitespace-only word
+  splitting): `word-by-word` (the default — the scenes' built-in
+  WordByWord treatment, no overlay), `karaoke-highlight`,
+  `bilingual-stack` (the cue's own Bengali-script words on top, Latin
+  words below — no translation is invented; single-script cues render
+  one line), `classic-bottom`, `boxed-bold`, `minimal-line`.
+- **Family planner in `create_video.py`** (SKILL.md B4, enforced):
+  one layout family per video, chosen from the middle cues' dominant
+  signal — step words → flow (Timeline/Hub-and-Spoke), numbers → grid
+  (Dashboard/Bento), otherwise stage (Glossy UI/3D Carousel/Glass
+  Cards/Minimal Clean/Gradient Fluid rotation, list-like cues →
+  Carousel). The free family (Dark Tech, Before/After, Flat Vector,
+  Line-Draw) is not auto-selected; it stays available to
+  hand-authored timelines. Every scene gains a `transition` (~80%
+  cuts; whip only on topic change — ≥ 1.5 s gap or a section keyword —
+  capped at 3, then zoom; slide/zoom/fade sparingly on pipeline
+  changes). `timeline.json` gains `family`; `timeline.md` gains a
+  Transition column.
+- **Converter pro flags:** `--captions <preset-id>` (invalid id exits
+  2 listing the valid ids); `--aspects 16:9,9:16,1:1` (one project per
+  aspect under `<out>/16x9` etc.; single `--aspect` unchanged);
+  `--voiceover <mp3|wav>` (copied into `public/`, ffprobe-probed,
+  drift vs the SRT printed as a warning beyond 1 s and recorded in
+  `timeline.json`; mp3 flips `HAS_VOICEOVER` on, wav is copied as-is
+  with a note that PreviewAudio expects mp3); `--render` (npm install
+  → remotion render → `qc_check.py` on the first project; any failure
+  exits 1 with `RENDER FAILED at step: <name>` — success is only
+  reported when an MP4 exists and QC passes).
+- **CI** (`.github/workflows/tests.yml`): Python 3.11 unittest suite +
+  Node 20 starter typecheck on push and pull requests.
+- **Committed sample output:** `examples/generated-project/` — the
+  real output of the converter on `examples/example-bengali.srt`
+  (palette tech, 16:9), machine-generated, node_modules excluded.
+- Tests: 21 → **27** (24-cue planner family/rotation/transitions,
+  captions flag + bad preset, multi-aspect dimensions, voiceover
+  drift warning, stubbed `--render` failure naming, demo-timeline
+  registration).
+
+### Still unverified (honest list, unchanged in kind)
+- A live end-to-end render on this build machine: the sandbox proxy
+  still blocks Google Fonts for headless Chromium, so `--render`'s
+  plumbing is verified with stubbed tools and its failure reporting
+  is exercised for real; the render step itself needs a machine with
+  direct font access.
+- Live Whisper transcription (no backend on the build machine; the
+  exit-3 degradation path is what is tested).
+
 ## 1.1.0 — 2026-11-15
 
 The converter release: SRT in → ready Remotion project out, in one command.
