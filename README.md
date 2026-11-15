@@ -394,6 +394,21 @@ zobvia/
 └── tests/                    # unittest suite for the scripts
 ```
 
+## 🖥️ Zobvia Studio — the app (Windows)
+
+Prefer clicking over commands? **Zobvia Studio** is the companion app in
+[`studio/`](studio/): upload a **voice file + an SRT file**, pick a colour,
+click **Generate** — and download the finished video.
+
+- **Windows package:** unzip, run `studio/INSTALL.bat` once (it installs
+  Python, Node.js and ffmpeg if needed and creates a Desktop shortcut),
+  then launch **Zobvia Studio** from your Desktop.
+- A true single-file `ZobviaStudio-Setup.exe` can be built on a Windows PC
+  with the included Inno Setup script — see
+  [`studio/README-WINDOWS.md`](studio/README-WINDOWS.md).
+- The Studio was tested end-to-end: real jobs rendered through the packaged
+  app passed full QC (1920×1080, 30 fps).
+
 ## 📄 License
 
 MIT — see [LICENSE](LICENSE). Use it, ship videos with it, sell your editing services with it.

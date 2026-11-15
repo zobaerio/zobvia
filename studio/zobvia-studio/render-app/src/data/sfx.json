@@ -1,0 +1,103 @@
+{
+  "events": [
+    {
+      "file": "sfx/boom-soft.wav",
+      "sound": "boom-soft",
+      "atSeconds": 0.0,
+      "sceneIndex": 1,
+      "scene": 1,
+      "durationSeconds": 0.7,
+      "kind": "accent"
+    },
+    {
+      "file": "sfx/whoosh.wav",
+      "sound": "whoosh",
+      "atSeconds": 3.5,
+      "sceneIndex": 2,
+      "scene": 2,
+      "durationSeconds": 0.4,
+      "kind": "accent"
+    },
+    {
+      "file": "sfx/whoosh.wav",
+      "sound": "whoosh",
+      "atSeconds": 7.0,
+      "sceneIndex": 3,
+      "scene": 3,
+      "durationSeconds": 0.4,
+      "kind": "accent"
+    },
+    {
+      "file": "sfx/pop.wav",
+      "sound": "pop",
+      "atSeconds": 11.0,
+      "sceneIndex": 4,
+      "scene": 4,
+      "durationSeconds": 0.12,
+      "kind": "accent"
+    },
+    {
+      "file": "sfx/riser.wav",
+      "sound": "riser",
+      "atSeconds": 15.5,
+      "sceneIndex": 5,
+      "scene": 5,
+      "durationSeconds": 0.8,
+      "kind": "accent"
+    },
+    {
+      "file": "sfx/whoosh.wav",
+      "sound": "whoosh",
+      "atSeconds": 20.0,
+      "sceneIndex": 6,
+      "scene": 6,
+      "durationSeconds": 0.4,
+      "kind": "transition"
+    },
+    {
+      "file": "sfx/thud.wav",
+      "sound": "thud",
+      "atSeconds": 20.2,
+      "sceneIndex": 6,
+      "scene": 6,
+      "durationSeconds": 0.25,
+      "kind": "accent"
+    },
+    {
+      "file": "sfx/whoosh.wav",
+      "sound": "whoosh",
+      "atSeconds": 25.0,
+      "sceneIndex": 7,
+      "scene": 7,
+      "durationSeconds": 0.4,
+      "kind": "accent"
+    },
+    {
+      "file": "sfx/thud.wav",
+      "sound": "thud",
+      "atSeconds": 30.5,
+      "sceneIndex": 8,
+      "scene": 8,
+      "durationSeconds": 0.25,
+      "kind": "accent"
+    },
+    {
+      "file": "sfx/sparkle.wav",
+      "sound": "sparkle",
+      "atSeconds": 36.0,
+      "sceneIndex": 9,
+      "scene": 9,
+      "durationSeconds": 0.5,
+      "kind": "accent"
+    },
+    {
+      "file": "sfx/chime.wav",
+      "sound": "chime",
+      "atSeconds": 41.0,
+      "sceneIndex": 10,
+      "scene": 10,
+      "durationSeconds": 0.4,
+      "kind": "accent"
+    }
+  ]
+}

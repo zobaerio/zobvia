@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zobvia Studio — Voice + SRT → Video</title>
+<style>
+  :root{
+    --bg:#070d16; --panel:#0d1622; --panel2:#111e2e; --line:#1e2f45;
+    --text:#e6eef7; --muted:#8fa6bd; --cyan:#22d3ee; --sky:#0ea5e9;
+    --amber:#f59e0b; --bad:#f87171; --good:#34d399;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#123 0,var(--bg) 55%);
+       color:var(--text);font-family:"Segoe UI",system-ui,-apple-system,sans-serif;}
+  .wrap{max-width:880px;margin:0 auto;padding:28px 18px 60px}
+  header{text-align:center;margin-bottom:26px}
+  .logo{font-size:40px;font-weight:800;letter-spacing:.5px}
+  .logo .z{color:var(--cyan)} .logo .s{color:var(--amber)}
+  .tag{color:var(--muted);margin-top:6px;font-size:15px}
+  .card{background:linear-gradient(180deg,var(--panel2),var(--panel));
+        border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:18px}
+  .card h2{margin:0 0 6px;font-size:17px}
+  .card .hint{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .drops{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:640px){.drops{grid-template-columns:1fr}}
+  .drop{border:2px dashed var(--line);border-radius:14px;padding:22px 14px;text-align:center;
+        cursor:pointer;transition:.15s;background:#0a141f}
+  .drop:hover,.drop.over{border-color:var(--cyan);background:#0c1a29}
+  .drop .icon{font-size:30px}
+  .drop .t{font-weight:700;margin-top:6px}
+  .drop .s{color:var(--muted);font-size:12.5px;margin-top:3px}
+  .drop .fname{color:var(--cyan);font-size:13px;margin-top:8px;word-break:break-all;min-height:16px}
+  .drop.filled{border-color:var(--good);border-style:solid}
+  .tones{display:flex;flex-wrap:wrap;gap:9px}
+  .tone{display:flex;align-items:center;gap:8px;padding:7px 12px 7px 8px;border-radius:999px;
+        border:1px solid var(--line);background:#0a141f;cursor:pointer;font-size:13.5px;user-select:none}
+  .tone .sw{width:26px;height:26px;border-radius:50%;border:2px solid #0006;flex:none}
+  .tone.sel{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber) inset;color:#fff}
+  .hexrow{display:flex;align-items:center;gap:10px;margin-top:14px;color:var(--muted);font-size:13.5px}
+  .hexrow input[type=color]{width:44px;height:32px;border:1px solid var(--line);border-radius:8px;
+        background:none;padding:2px;cursor:pointer}
+  .hexrow input[type=text]{background:#0a141f;border:1px solid var(--line);color:var(--text);
+        border-radius:8px;padding:7px 10px;width:110px;font-family:Consolas,monospace}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:640px){.row2{grid-template-columns:1fr}}
+  .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .seg button{flex:1;background:#0a141f;color:var(--muted);border:0;padding:10px 0;cursor:pointer;
+        font-size:14px;font-weight:600}
+  .seg button.sel{background:var(--sky);color:#fff}
+  select{width:100%;background:#0a141f;border:1px solid var(--line);color:var(--text);
+         border-radius:10px;padding:10px;font-size:14px}
+  label.lbl{display:block;color:var(--muted);font-size:13px;margin-bottom:7px}
+  #go{width:100%;padding:16px;border:0;border-radius:14px;cursor:pointer;font-size:18px;font-weight:800;
+      color:#06121f;background:linear-gradient(90deg,var(--cyan),var(--amber));transition:.15s}
+  #go:hover{filter:brightness(1.1)} #go:disabled{opacity:.45;cursor:wait}
+  .barwrap{background:#0a141f;border:1px solid var(--line);border-radius:999px;height:18px;overflow:hidden}
+  .bar{height:100%;width:0%;background:linear-gradient(90deg,var(--sky),var(--cyan),var(--amber));
+       transition:width .6s}
+  #stage{margin-top:10px;color:var(--muted);font-size:14px;min-height:20px}
+  #err{display:none;background:#2a1215;border:1px solid #7f1d1d;color:#fecaca;border-radius:12px;
+       padding:14px;font-size:14px;white-space:pre-wrap}
+  #result{display:none}
+  #result video{width:100%;border-radius:12px;background:#000}
+  .dl{display:inline-block;margin-top:14px;padding:12px 22px;border-radius:10px;font-weight:700;
+      background:var(--amber);color:#1a1000;text-decoration:none}
+  footer{color:var(--muted);text-align:center;font-size:12.5px;margin-top:8px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="z">ZOBVIA</span> <span class="s">STUDIO</span></div>
+    <div class="tag">Voice + SRT upload করলেই ready video — শুধু একটা প্রশ্ন: কোন রঙ? 🎨</div>
+  </header>
+
+  <div class="card">
+    <h2>1 · Files — ফাইল দাও</h2>
+    <p class="hint">SRT ফাইলটাই আসল — ওটা থেকেই সব scene তৈরি হয়। Voice দিলে ভিডিওতে তোমার কণ্ঠ বসবে;
+       voice না দিলেও video হবে (শুধু SFX sound)।</p>
+    <div class="drops">
+      <div class="drop" id="dropSrt" tabindex="0">
+        <div class="icon">📄</div>
+        <div class="t">SRT Subtitle — .srt ফাইল</div>
+        <div class="s">Drag &amp; drop অথবা click করে বেছে নাও</div>
+        <div class="fname" id="nameSrt"></div>
+        <input type="file" id="fileSrt" accept=".srt" hidden>
+      </div>
+      <div class="drop" id="dropVoice" tabindex="0">
+        <div class="icon">🎙️</div>
+        <div class="t">Voice — ভয়েস ফাইল (optional)</div>
+        <div class="s">MP3 / WAV / M4A — Drag &amp; drop অথবা click</div>
+        <div class="fname" id="nameVoice"></div>
+        <input type="file" id="fileVoice" accept="audio/*,.mp4,.m4a,.opus" hidden>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:12px">ℹ️ শুধু voice দিলে (SRT ছাড়া) এই মেশিনে কাজ হবে না —
+      Whisper transcription এখানে installed নেই, তাই SRT ফাইলটা লাগবেই।</p>
+  </div>
+
+  <div class="card">
+    <h2>2 · Colour — একটাই প্রশ্ন: কোন রঙ? 🎨</h2>
+    <p class="hint">একটা tone বেছে নাও, অথবা নিজের পছন্দের hex রঙ দাও (hex দিলে সেটাই জিতবে)।</p>
+    <div class="tones" id="tones"></div>
+    <div class="hexrow">
+      <span>Custom:</span>
+      <input type="color" id="hexPick" value="#f59e0b">
+      <input type="text" id="hexText" placeholder="#RRGGBB" maxlength="7">
+      <span id="hexState">(tone থেকে রঙ নেওয়া হচ্ছে)</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3 · Format — ফরম্যাট</h2>
+    <div class="row2">
+      <div>
+        <label class="lbl">Aspect ratio — আকার</label>
+        <div class="seg" id="aspectSeg">
+          <button data-v="16:9" class="sel">16:9 ▶ YouTube</button>
+          <button data-v="9:16">9:16 Shorts/Reels</button>
+          <button data-v="1:1">1:1 Square</button>
+        </div>
+      </div>
+      <div>
+        <label class="lbl" for="captions">Captions — ক্যাপশন স্টাইল</label>
+        <select id="captions">
+          <option value="karaoke-highlight" selected>Karaoke Highlight — শব্দ ধরে ধরে রঙ</option>
+          <option value="word-by-word">Word by Word — শব্দ একে একে আসে</option>
+          <option value="bilingual-stack">Bilingual Stack — দুই লাইন</option>
+          <option value="classic-bottom">Classic Bottom — নিচে সাধারণ</option>
+          <option value="boxed-bold">Boxed Bold — বক্সে মোটা হরফ</option>
+          <option value="minimal-line">Minimal Line — হালকা এক লাইন</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <button id="go">🎬 Generate Video — ভিডিও বানাও</button>
+
+  <div class="card" id="progressCard" style="display:none;margin-top:18px">
+    <h2>⏳ Progress — হচ্ছে…</h2>
+    <div class="barwrap"><div class="bar" id="bar"></div></div>
+    <div id="stage">…</div>
+  </div>
+
+  <div id="err"></div>
+
+  <div class="card" id="result">
+    <h2>✅ Done — তোমার ভিডিও ready!</h2>
+    <video id="vid" controls playsinline></video>
+    <br><a class="dl" id="dl" href="#" download="zobvia-video.mp4">⬇ Download MP4</a>
+  </div>
+
+  <footer>
+    Zobvia Studio (prototype) — local app, runs on your own machine.<br>
+    একটা করে job চলে (render ভারী কাজ) · 45 সেকেন্ডের video-তে প্রায় 2.5–4 মিনিট লাগে · jobs queue-তে থাকে।
+  </footer>
+</div>
+
+<script>
+const TONES = [
+  ["creative","#4C1D95","#D946EF","#22D3EE","Creative — সৃজনশীল"],
+  ["tech","#0A1929","#0EA5E9","#22D3EE","Tech — টেক"],
+  ["calm","#87A878","#7FB3D5","#E8DCC3","Calm — শান্ত"],
+  ["urgent","#991B1B","#DC2626","#EA580C","Urgent — জরুরি"],
+  ["playful","#FB7185","#F59E0B","#8B5CF6","Playful — মজার"],
+  ["premium","#1F2937","#B45309","#4C1D95","Premium — প্রিমিয়াম"],
+  ["growth","#064E3B","#059669","#84CC16","Growth — গ্রোথ"],
+  ["minimal","#78716C","#F3F4F6","#0EA5E9","Minimal — মিনিমাল"],
+  ["dark","#0A1929","#475569","#0EA5E9","Dark — ডার্ক"],
+  ["warm","#B45309","#C2410C","#FB7185","Warm — উষ্ণ"],
+  ["cool","#0EA5E9","#0F766E","#4C1D95","Cool — কুল"],
+];
+let tone = "creative", aspect = "16:9";
+const tonesEl = document.getElementById("tones");
+TONES.forEach(([id,c1,c2,c3,label])=>{
+  const d = document.createElement("div");
+  d.className = "tone" + (id===tone ? " sel" : "");
+  d.innerHTML = `<span class="sw" style="background:linear-gradient(135deg,${c1} 0%,${c2} 55%,${c3} 100%)"></span>${label}`;
+  d.onclick = ()=>{ tone = id;
+    document.querySelectorAll(".tone").forEach(t=>t.classList.remove("sel"));
+    d.classList.add("sel"); clearHex(); };
+  tonesEl.appendChild(d);
+});
+const hexPick = document.getElementById("hexPick"), hexText = document.getElementById("hexText"),
+      hexState = document.getElementById("hexState");
+function clearHex(){ hexText.value=""; hexState.textContent="(tone থেকে রঙ নেওয়া হচ্ছে)"; }
+hexPick.oninput = ()=>{ hexText.value = hexPick.value.toUpperCase();
+  hexState.textContent = "(custom hex ব্যবহার হবে)"; };
+hexText.oninput = ()=>{ hexState.textContent = /^#[0-9a-fA-F]{6}$/.test(hexText.value.trim())
+  ? "(custom hex ব্যবহার হবে)" : "(tone থেকে রঙ নেওয়া হচ্ছে)"; };
+
+function wireDrop(dropId, inputId, nameId){
+  const drop = document.getElementById(dropId), input = document.getElementById(inputId),
+        name = document.getElementById(nameId);
+  drop.onclick = ()=>input.click();
+  drop.onkeydown = e=>{ if(e.key==="Enter"||e.key===" ") input.click(); };
+  ["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
+  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over")}));
+  drop.addEventListener("drop", e=>{ const f = e.dataTransfer.files[0];
+    if(f){ input.files = e.dataTransfer.files; show(); }});
+  input.onchange = show;
+  function show(){ const f = input.files[0];
+    name.textContent = f ? "✔ " + f.name : ""; drop.classList.toggle("filled", !!f); }
+}
+wireDrop("dropSrt","fileSrt","nameSrt");
+wireDrop("dropVoice","fileVoice","nameVoice");
+
+document.querySelectorAll("#aspectSeg button").forEach(b=>{
+  b.onclick = ()=>{ aspect = b.dataset.v;
+    document.querySelectorAll("#aspectSeg button").forEach(x=>x.classList.remove("sel"));
+    b.classList.add("sel"); };
+});
+
+const go = document.getElementById("go"), bar = document.getElementById("bar"),
+      stage = document.getElementById("stage"), err = document.getElementById("err"),
+      result = document.getElementById("result"), pcard = document.getElementById("progressCard");
+let poller = null;
+
+go.onclick = async ()=>{
+  err.style.display = "none"; result.style.display = "none";
+  const fd = new FormData();
+  const srt = document.getElementById("fileSrt").files[0];
+  const voice = document.getElementById("fileVoice").files[0];
+  if(srt) fd.append("srt", srt);
+  if(voice) fd.append("voice", voice);
+  if(!srt && !voice){ showErr("আগে অন্তত SRT ফাইলটা দাও — Please choose an .srt file first."); return; }
+  fd.append("tone", tone);
+  fd.append("hex", hexText.value.trim());
+  fd.append("aspect", aspect);
+  fd.append("captions", document.getElementById("captions").value);
+  go.disabled = true; go.textContent = "⏳ Working…";
+  pcard.style.display = "block"; bar.style.width = "2%"; stage.textContent = "Uploading…";
+  let job;
+  try{
+    const r = await fetch("/api/jobs", {method:"POST", body:fd});
+    job = await r.json();
+    if(!r.ok) throw new Error(job.error || ("HTTP " + r.status));
+  }catch(e){ showErr("Upload failed: " + e.message); reset(); return; }
+  poller = setInterval(async ()=>{
+    try{
+      const r = await fetch("/api/jobs/" + job.id);
+      const j = await r.json();
+      bar.style.width = (j.progress || 0) + "%";
+      stage.textContent = j.message || j.stage;
+      if(j.stage === "done"){
+        clearInterval(poller);
+        document.getElementById("vid").src = j.video_url;
+        document.getElementById("dl").href = j.video_url;
+        result.style.display = "block"; reset();
+      }else if(j.stage === "failed"){
+        clearInterval(poller);
+        showErr((j.error || "Job failed.") + (j.detail ? "\n\n— details —\n" + j.detail : ""));
+        reset();
+      }
+    }catch(e){ /* keep polling */ }
+  }, 2000);
+};
+function showErr(msg){ err.textContent = msg; err.style.display = "block"; }
+function reset(){ go.disabled = false; go.textContent = "🎬 Generate Video — ভিডিও বানাও"; }
+</script>
+</body>
+</html>
