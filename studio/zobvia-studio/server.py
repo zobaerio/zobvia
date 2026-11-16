@@ -80,7 +80,12 @@ except Exception as _e:  # noqa: BLE001
 def access_unlocked() -> bool:
     return True if _access is None else _access.is_unlocked()
 
-HOST, PORT = "127.0.0.1", 8770
+# Default: this machine only. ZOBVIA_LAN=1 (or the LAN launcher) also
+# serves phones/tablets on the same Wi-Fi — the access-password gate
+# still protects job creation in that mode.
+import os as _os
+LAN_MODE = _os.environ.get("ZOBVIA_LAN", "").strip() in ("1", "true", "yes")
+HOST, PORT = ("0.0.0.0", 8770) if LAN_MODE else ("127.0.0.1", 8770)
 MAX_UPLOAD_BYTES = 600 * 1024 * 1024  # 600 MB safety cap
 RENDER_TIMEOUT_S = 25 * 60
 
@@ -659,6 +664,19 @@ def main():
     threading.Thread(target=worker_loop, daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Zobvia Studio → http://{HOST}:{PORT}  (Ctrl+C to stop)")
+    if LAN_MODE:
+        import socket as _socket
+        ips = set()
+        try:
+            infos = _socket.getaddrinfo(_socket.gethostname(), None,
+                                        _socket.AF_INET)
+            ips = {i[4][0] for i in infos if not i[4][0].startswith("127.")}
+        except Exception:  # noqa: BLE001
+            pass
+        for ip in sorted(ips):
+            print(f"Phone/Tablet (same Wi-Fi): http://{ip}:{PORT}")
+        print("LAN mode: anyone on this Wi-Fi can open the page; "
+              "the access password still protects video creation.")
     print("Voice→SRT transcription (Whisper):",
           f"ready via {WHISPER_PYTHON}" if WHISPER_PYTHON else
           "not installed — SRT upload and Script box still work")

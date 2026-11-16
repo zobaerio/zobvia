@@ -32,6 +32,21 @@ password itself is never stored, only its SHA-256 hash is checked.
    Zobvia times it against your voice and builds the SRT itself.
 3. **SRT upload:** the classic way, if you already have an .srt file.
 
+## Use on PC, Android phone and tablet
+
+- **PC (this computer):** run `ZobviaStudio.bat` — the app opens in the
+  PC browser. All the heavy work (rendering) happens here.
+- **Android phone / tablet (and iPad):** the app itself does not install
+  on the phone — instead the phone uses the PC as its engine:
+  1. Connect the phone/tablet and the PC to the **same Wi-Fi**.
+  2. On the PC, run **`ZobviaStudio-LAN.bat`**.
+  3. The server window prints an address like `http://192.168.1.5:8770` —
+     open it in the phone/tablet browser.
+  4. Unlock with the access password, upload voice/SRT (or use the
+     Script box) from the phone, tap Generate — the PC renders, and the
+     finished video plays/downloads right in the phone browser.
+- Windows tablets work exactly like a PC.
+
 ## Use
 
 1. Drag in your **SRT** file (required) and your **voice** file (optional).
