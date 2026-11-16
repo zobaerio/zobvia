@@ -479,6 +479,15 @@ class TestCreateVideoV12(unittest.TestCase):
             self.assertEqual(info["file"], "voiceover.wav")
             self.assertAlmostEqual(info["durationSeconds"], 3.0, delta=0.25)
             self.assertAlmostEqual(info["srtDurationSeconds"], 45.0)
+            # Regression (v1.5.1): a .wav voiceover must ALSO switch the
+            # voiceover on — previously HAS_VOICEOVER only flipped for
+            # .mp3, so .wav projects rendered SFX-only with no voice.
+            timing = (out / "src" / "timing.ts").read_text(encoding="utf-8")
+            self.assertIn("export const HAS_VOICEOVER = true;", timing)
+            self.assertIn('export const VOICEOVER_FILE = "voiceover.wav";',
+                          timing)
+            main_tsx = (out / "src" / "Main.tsx").read_text(encoding="utf-8")
+            self.assertIn("staticFile(VOICEOVER_FILE)", main_tsx)
 
     def test_render_failure_names_the_step(self):
         import os

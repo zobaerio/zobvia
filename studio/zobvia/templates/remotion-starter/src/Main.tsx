@@ -36,7 +36,7 @@ import { SceneTransition } from "./components/transitions";
 import { timeline, type SceneProps } from "./data/timeline";
 import rawSfx from "./data/sfx.json";
 import { theme } from "./theme";
-import { HAS_VOICEOVER } from "./timing";
+import { HAS_VOICEOVER, VOICEOVER_FILE } from "./timing";
 
 /** Pipeline id (from timeline.json) -> scene component. */
 const PIPELINE_COMPONENTS: Record<string, React.FC<SceneProps>> = {
@@ -156,7 +156,8 @@ export const Main: React.FC = () => {
  *
  * The <Audio> element is only rendered when HAS_VOICEOVER is true in
  * timing.ts, which the skill flips ONLY after a real file has been placed
- * at public/voiceover.mp3. Because the file is referenced with staticFile()
+ * at public/ under the name VOICEOVER_FILE (src/timing.ts). Because the
+ * file is referenced with staticFile()
  * (a runtime URL, not a bundled import), a missing file can never break
  * bundling, typechecking or a still render.
  */
@@ -166,7 +167,7 @@ export const PreviewAudio: React.FC = () => {
       style={{ backgroundColor: theme.bg, fontFamily: theme.font }}
     >
       <Main />
-      {HAS_VOICEOVER ? <Audio src={staticFile("voiceover.mp3")} /> : null}
+      {HAS_VOICEOVER ? <Audio src={staticFile(VOICEOVER_FILE)} /> : null}
     </AbsoluteFill>
   );
 };

@@ -14,11 +14,19 @@
 export const FPS = 30;
 
 /**
- * Set to `true` ONLY after a real file exists at `public/voiceover.mp3`.
+ * Set to `true` ONLY after a real voiceover file exists in `public/`.
  * It defaults to `false` so a missing voiceover can never break bundling
- * or rendering — see `PreviewAudio` in Main.tsx.
+ * or rendering — see `PreviewAudio` in Main.tsx. The one-command
+ * converter flips this to `true` for BOTH .mp3 and .wav voiceovers.
  */
 export const HAS_VOICEOVER = false;
+
+/**
+ * Name of the voiceover file inside `public/` that PreviewAudio plays
+ * when HAS_VOICEOVER is true. The converter sets this to the copied
+ * file's name ("voiceover.mp3" or "voiceover.wav").
+ */
+export const VOICEOVER_FILE = "voiceover.mp3";
 
 export type SceneId = "hook" | "bento" | "dashboard";
 

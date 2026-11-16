@@ -76,7 +76,9 @@ Extra flags:
       named with ":" replaced by "x" (e.g. <out>/16x9).
   --voiceover <file>      .mp3 or .wav only (else exit 2). Copied into
       each generated project's public/ as voiceover.mp3 / voiceover.wav.
-      For .mp3, HAS_VOICEOVER is flipped to true in src/timing.ts.
+      HAS_VOICEOVER is flipped to true in src/timing.ts and
+      VOICEOVER_FILE is set to the copied file's name (both formats),
+      so the PreviewAudio composition plays the voiceover as-is.
       Duration is probed with ffprobe and compared with the SRT total;
       a drift > 1.0s prints a "WARNING: voiceover duration" line.
   --render                After generation, render the FIRST generated
@@ -734,18 +736,11 @@ def render_project_readme(title, scenes, total, theme, aspect, sfx_events,
                 f"\nWARNING: voiceover duration differs from SRT duration "
                 f"by {abs(drift):.3f} seconds.\n"
             )
-        if vo_file.endswith(".wav"):
-            voiceover_section += (
-                f"\nNote: PreviewAudio plays `voiceover.mp3`, so a .wav "
-                f"voiceover should be converted or renamed to "
-                f"`voiceover.mp3` by the user before previewing with "
-                f"PreviewAudio.\n"
-            )
-        else:
-            voiceover_section += (
-                f"\n`HAS_VOICEOVER` has been set to `true` in "
-                f"`src/timing.ts` for this project.\n"
-            )
+        voiceover_section += (
+            f"\n`HAS_VOICEOVER` has been set to `true` and "
+            f"`VOICEOVER_FILE` to `{vo_file}` in `src/timing.ts` "
+            f"for this project, so PreviewAudio plays the voiceover.\n"
+        )
     else:
         voiceover_section = (
             "## Voiceover (optional)\n\n"
@@ -910,27 +905,37 @@ def generate_project(out_dir, title, scenes, family, captions, total,
     for sound in sorted({e["sound"] for e in sfx_events}):
         samples = sfx_gen.normalise(gens[sound]())
         sfx_gen.write_wav(sfx_dir / f"{sound}.wav", samples)
-    # Voiceover copy (+ timing flip for .mp3).
+    # Voiceover copy + timing.ts wiring (BOTH .mp3 and .wav: flip
+    # HAS_VOICEOVER and point VOICEOVER_FILE at the copied file, so a
+    # .wav voiceover can never silently render as SFX-only again).
     if voiceover_info is not None and voiceover_src is not None:
         dest = out_dir / "public" / voiceover_info["file"]
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(str(voiceover_src), str(dest))
-        if voiceover_info["file"] == "voiceover.mp3":
-            timing_path = out_dir / "src" / "timing.ts"
-            if timing_path.is_file():
-                content = timing_path.read_text(encoding="utf-8")
-                needle = "export const HAS_VOICEOVER = false;"
-                if needle in content:
-                    timing_path.write_text(
-                        content.replace(
-                            needle, "export const HAS_VOICEOVER = true;"),
-                        encoding="utf-8")
-                else:
-                    print("Warning: HAS_VOICEOVER pattern not found in "
-                          f"{timing_path}; leaving timing.ts unchanged.")
+        timing_path = out_dir / "src" / "timing.ts"
+        if timing_path.is_file():
+            content = timing_path.read_text(encoding="utf-8")
+            needle = "export const HAS_VOICEOVER = false;"
+            if needle in content:
+                content = content.replace(
+                    needle, "export const HAS_VOICEOVER = true;")
             else:
-                print(f"Warning: timing.ts not found at {timing_path}; "
-                      "cannot set HAS_VOICEOVER.")
+                print("Warning: HAS_VOICEOVER pattern not found in "
+                      f"{timing_path}; leaving the flag unchanged.")
+            file_needle = 'export const VOICEOVER_FILE = "voiceover.mp3";'
+            if voiceover_info["file"] != "voiceover.mp3":
+                if file_needle in content:
+                    content = content.replace(
+                        file_needle,
+                        'export const VOICEOVER_FILE = "'
+                        + voiceover_info["file"] + '";')
+                else:
+                    print("Warning: VOICEOVER_FILE pattern not found in "
+                          f"{timing_path}; leaving the file name unchanged.")
+            timing_path.write_text(content, encoding="utf-8")
+        else:
+            print(f"Warning: timing.ts not found at {timing_path}; "
+                  "cannot set HAS_VOICEOVER.")
 
 
 def main(argv=None):

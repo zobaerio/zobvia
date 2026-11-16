@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.1 — 2026-11-16
+
+Bug fix: a .wav voiceover could silently render with no voice at all.
+
+### Fixed
+- **.wav voiceovers now play.** `create_video.py` previously flipped `HAS_VOICEOVER` only for .mp3 voiceovers, and `Main.tsx` hardcoded `voiceover.mp3` — so a project generated with a .wav voiceover rendered SFX-only while looking successful. The converter now flips `HAS_VOICEOVER` for both formats and records the copied file's name in a new `VOICEOVER_FILE` export in `src/timing.ts`, which `PreviewAudio` plays via `staticFile(VOICEOVER_FILE)`. Covered by a regression test (the .wav drift test now asserts the flag, the file name, and the Main.tsx wiring), and verified end-to-end with a partial render whose audio carries the speech.
+
+## 1.5.0 — 2026-11-16
+
+### Added
+- **Glass Showcase scene** (`glass-showcase`): animated mesh-gradient background with frosted-glass tiles carrying chunks of the cue's own text — the premium glassmorphism promo look. Joins the stage rotation with a sparkle entry sound. Style pipelines: 19 → **20**; named capability items: 216 → **217**.
+
 ## 1.4.0 — 2026-11-15
 
 Multi-colour text, full-coverage sound, and an interactivity layer — every scene now carries colour and sound, with no scene left silent or single-accent.
