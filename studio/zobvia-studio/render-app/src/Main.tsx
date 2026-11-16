@@ -8,6 +8,7 @@ import { DarkTechScene } from "./scenes/DarkTechScene";
 import { DashboardScene } from "./scenes/DashboardScene";
 import { FlatVectorScene } from "./scenes/FlatVectorScene";
 import { GlassCardsScene } from "./scenes/GlassCardsScene";
+import { GlassShowcaseScene } from "./scenes/GlassShowcaseScene";
 import { GlossyUiScene } from "./scenes/GlossyUiScene";
 import { GradientFluidScene } from "./scenes/GradientFluidScene";
 import { HubSpokeScene } from "./scenes/HubSpokeScene";
@@ -44,6 +45,7 @@ const PIPELINE_COMPONENTS: Record<string, React.FC<SceneProps>> = {
   "carousel-3d": CarouselScene,
   "dark-tech": DarkTechScene,
   "glass-cards": GlassCardsScene,
+  "glass-showcase": GlassShowcaseScene,
   "minimal-clean": MinimalCleanScene,
   "gradient-fluid": GradientFluidScene,
   statement: StatementCard,

@@ -26,7 +26,7 @@ What it does (deterministically — same input, same plan):
          (family middles rotate [bento, dashboard]).
        - flow: step-word cue -> timeline, else hub-spoke
          (family middles rotate [timeline, hub-spoke]).
-       - stage: rotate through [glossy-ui, carousel-3d, glass-cards,
+       - stage: rotate through [glossy-ui, carousel-3d, glass-cards, glass-showcase,
          minimal-clean, gradient-fluid]; a cue with >= 2 commas
          (list-like) -> carousel-3d and does not advance the rotation.
      The free family (dark-tech / before-after / flat-vector /
@@ -114,6 +114,7 @@ GLOSSY_UI = "glossy-ui"
 CAROUSEL_3D = "carousel-3d"
 DARK_TECH = "dark-tech"
 GLASS_CARDS = "glass-cards"
+GLASS_SHOWCASE = "glass-showcase"
 MINIMAL_CLEAN = "minimal-clean"
 GRADIENT_FLUID = "gradient-fluid"
 STATEMENT = "statement"
@@ -133,7 +134,7 @@ CTA = "cta"
 # auto-selected by the planner; those pipelines remain available to
 # hand-authored timelines.
 GRID_MIDDLES = [BENTO, DASHBOARD]
-STAGE_ROTATION = [GLOSSY_UI, CAROUSEL_3D, GLASS_CARDS, MINIMAL_CLEAN, GRADIENT_FLUID]
+STAGE_ROTATION = [GLOSSY_UI, CAROUSEL_3D, GLASS_CARDS, GLASS_SHOWCASE, MINIMAL_CLEAN, GRADIENT_FLUID]
 FLOW_MIDDLES = [TIMELINE, HUB_SPOKE]
 FREE_FAMILY = [DARK_TECH, BEFORE_AFTER, FLAT_VECTOR, LINE_DRAW]
 
@@ -188,6 +189,7 @@ TRANSITION_SFX = {
 # Pipeline id -> scene-entry accent sound.
 ACCENT_SFX = {
     "glass-cards": "pop",
+    "glass-showcase": "sparkle",
     "bento": "pop",
     "flip-3d": "pop",
     "carousel-3d": "whoosh",

@@ -8,7 +8,8 @@ Each entry: **look / layout / best for**.
 
 - **Grid family:** Bento Grid, Data Dashboard, Checklist/Recap Grid
 - **Stage family:** Glossy UI Mockup, 3D Carousel, Glass Cards,
-  Minimal Clean, Kinetic Typography, Gradient Fluid, Statement Card
+  Glass Showcase, Minimal Clean, Kinetic Typography, Gradient Fluid,
+  Statement Card
 - **Flow family:** Timeline/Process Flow, Hub-and-Spoke
 - **Free family** (pairs with stage only): Dark Tech, Before/After
   Split, Flat Vector/Isometric, Line-Draw/Doodle
@@ -157,3 +158,14 @@ free pipelines. Each genre scene is data-driven from the same SRT
 cues (banner + lower-third for news, speaker discs + waveform for
 podcast, hero panel + the cue's own number chips for product, and
 so on). See `references/genre-recipes.md` for the per-genre recipes.
+
+## v1.5 expansion — Glass Showcase
+
+20. **Glass Showcase** (`glass-showcase`) — *Look:* premium SaaS-promo
+    glassmorphism — an animated mesh-gradient (three theme-colour
+    blobs drifting slowly) behind a 2x2 grid of frosted-glass tiles
+    with bright borders and soft shadows. *Layout:* word-by-word
+    heading over 1–4 glass tiles, each tile one chunk of the cue with
+    a gradient shape chip; tiles spring in staggered, then float
+    gently on sine waves. *Best for:* product promos, feature
+    showcases, app launches, anything that should feel premium.

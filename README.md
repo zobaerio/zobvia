@@ -16,7 +16,7 @@
 `LEARN` — paste a video link, get a reusable **style skill** (pacing, cuts, captions, zooms, SFX — measured in numbers, not adjectives).
 `CREATE` — paste an SRT, get a polished **1920×1080 / 30 fps motion-graphics video project**. The skill asks you exactly **one question — which colour?** — and decides everything else like a professional editor.
 
-[Quick start](#-quick-start) · [Full video guide](#-how-to-make-a-video--the-complete-guide) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-216-named-items) · [Examples](examples/)
+[Quick start](#-quick-start) · [Full video guide](#-how-to-make-a-video--the-complete-guide) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-217-named-items) · [Examples](examples/)
 
 ![Zobvia — how it works](assets/demo.svg)
 
@@ -112,7 +112,7 @@ What you get in `my-video/`:
   chosen from the SRT's dominant signal (step words → flow family:
   Timeline / Hub-and-Spoke; numbers → grid family: Dashboard / Bento;
   otherwise the stage family: Glossy UI, 3D Carousel, Glass Cards,
-  Minimal Clean, Gradient Fluid). Every scene also carries a
+  Glass Showcase, Minimal Clean, Gradient Fluid). Every scene also carries a
   `transition` — about 80% hard cuts, a whip only on a topic change
   (≥ 1.5 s pause or a section keyword, max 3 per video), slide / zoom /
   fade sparingly — and the project carries a `captions` preset
@@ -328,11 +328,11 @@ Most tools break Bengali. zobvia doesn't:
 - Latin tool names (*ChatGPT, Midjourney*) sized +4–6% inside Bengali lines
 - Full rules in [`references/bengali-text-rules.md`](references/bengali-text-rules.md), RTL + Devanagari in [`references/multilingual-typography.md`](references/multilingual-typography.md)
 
-## 📚 Capability index (216 named items)
+## 📚 Capability index (217 named items)
 
 | Library | Count | File |
 |---|---:|---|
-| Style pipelines (16 core + 3 CSS-3D expansion) | 19 | `references/style-pipelines.md` |
+| Style pipelines (16 core + 3 CSS-3D + 1 glass expansion) | 20 | `references/style-pipelines.md` |
 | Text + card animations & core transitions | 20 | `references/animation-library.md` |
 | Animation kit helpers (coded, reusable) | 8 | `templates/remotion-starter/src/components/anim.tsx` |
 | Genre scene types (via `--genre`) | 8 | `references/genre-recipes.md` |

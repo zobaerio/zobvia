@@ -344,7 +344,7 @@ class TestQcCheck(unittest.TestCase):
 
 
 STAGE_MIDDLES = {"glossy-ui", "carousel-3d", "glass-cards",
-                 "minimal-clean", "gradient-fluid"}
+                 "glass-showcase", "minimal-clean", "gradient-fluid"}
 
 # 24 plain sentences: no digits, no step words (first/then/next/finally/
 # step), no section keywords, no commas — a neutral SRT whose planner
