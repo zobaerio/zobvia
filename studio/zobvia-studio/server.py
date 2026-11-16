@@ -34,6 +34,28 @@ WORKSPACE = STUDIO.parent
 SKILL_DIR = WORKSPACE / "zobvia"
 CREATE_VIDEO = SKILL_DIR / "scripts" / "create_video.py"
 TRANSCRIBE = SKILL_DIR / "scripts" / "transcribe.py"
+MAKE_SRT = SKILL_DIR / "scripts" / "make_srt.py"
+
+
+def _probe_whisper_python():
+    """First python (this one, or a whisper-venv beside the app) that can
+    import faster_whisper — used to run transcribe.py for voice-only jobs."""
+    candidates = [sys.executable]
+    for venv in (WORKSPACE / "whisper-venv", STUDIO / "whisper-venv"):
+        candidates.append(str(venv / "bin" / "python"))
+        candidates.append(str(venv / "Scripts" / "python.exe"))
+    for cand in candidates:
+        try:
+            r = subprocess.run([cand, "-c", "import faster_whisper"],
+                               capture_output=True, timeout=30)
+            if r.returncode == 0:
+                return cand
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+WHISPER_PYTHON = _probe_whisper_python()
 RENDER_APP = STUDIO / "render-app"
 PATCHED_ROOT = STUDIO / "Root.patched.tsx"  # self-hosted-font Root.tsx
 JOBS_DIR = STUDIO / "jobs"
@@ -295,14 +317,43 @@ def process_job(job):
         has_srt = srt_path.exists() and srt_path.stat().st_size > 0
         has_voice = voice_raw.exists() and voice_raw.stat().st_size > 0
 
+        # --- No SRT but a typed script: build the SRT from the script ---
+        script_path = job_dir / "script.txt"
+        if not has_srt and script_path.exists() and script_path.stat().st_size > 0:
+            update_job(job, message="Building subtitles from your script…")
+            cmd = [sys.executable, str(MAKE_SRT), "--text", str(script_path),
+                   "--out", str(srt_path)]
+            if has_voice:
+                cmd += ["--audio", str(voice_raw)]
+            elif params.get("duration"):
+                cmd += ["--duration", str(params["duration"])]
+            else:
+                update_job(
+                    job, stage="failed", progress=0,
+                    error=("Script received, but its length is unknown: "
+                           "upload the voice file too, or give the duration "
+                           "in seconds, so timings can be calculated."))
+                return
+            code, out = run_cmd(cmd, timeout=120)
+            if code == 0 and srt_path.exists() and srt_path.stat().st_size > 0:
+                has_srt = True
+            else:
+                update_job(job, stage="failed", progress=0,
+                           error="Could not build subtitles from the script.",
+                           detail=out or None)
+                return
+
         # --- No SRT: try transcription (honest failure without Whisper) ---
         if not has_srt:
-            if has_voice:
-                update_job(job, message="No SRT — trying transcription…")
+            if has_voice and WHISPER_PYTHON:
+                update_job(job, message="No SRT — transcribing your voice "
+                                         "(first time downloads the model)…")
                 code, out = run_cmd(
-                    [sys.executable, str(TRANSCRIBE),
-                     "--in", str(voice_raw), "--out", str(job_dir / "auto.srt")],
-                    timeout=900)
+                    [WHISPER_PYTHON, str(TRANSCRIBE),
+                     "--in", str(voice_raw), "--out", str(job_dir / "auto.srt"),
+                     "--language", params.get("language", "bn"),
+                     "--model", params.get("model", "small")],
+                    timeout=1800)
                 auto = job_dir / "auto.srt"
                 if code == 0 and auto.exists() and auto.stat().st_size > 0:
                     shutil.copyfile(auto, srt_path)
@@ -310,18 +361,27 @@ def process_job(job):
                 else:
                     update_job(
                         job, stage="failed", progress=0,
-                        error=("SRT needed — transcription not available on "
-                               "this machine. Whisper is not installed here, "
-                               "so Zobvia Studio cannot turn voice into "
-                               "subtitles yet. Please upload an .srt file "
-                               "together with your voice."),
+                        error=("Transcription failed on this machine. "
+                               "Alternatives: upload an .srt file, or paste "
+                               "your script in the Script box and Zobvia "
+                               "will build the subtitles from it."),
                         detail=out or None)
                     return
+            elif has_voice:
+                update_job(
+                    job, stage="failed", progress=0,
+                    error=("SRT needed — voice-to-subtitle transcription "
+                           "(Whisper) is not installed on this machine. "
+                           "Two ways forward: upload an .srt file with your "
+                           "voice, or paste your script in the Script box "
+                           "and Zobvia builds the subtitles from it."))
+                return
             else:
                 update_job(
                     job, stage="failed", progress=0,
-                    error="No files received. Upload at least an .srt file "
-                          "(the voice file is optional).")
+                    error="Nothing to work with. Upload an .srt file, or a "
+                          "voice file, or paste your script in the Script "
+                          "box (with a duration).")
                 return
 
         # --- Voice: normalise to MP3 so create_video flips HAS_VOICEOVER
@@ -475,6 +535,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/access":
             self.send_json(200, {"unlocked": access_unlocked()})
             return
+        if path == "/api/capabilities":
+            self.send_json(200, {"whisper": WHISPER_PYTHON is not None})
+            return
         m = re.match(r"^/api/jobs/([0-9a-f]+)$", path)
         if m:
             with JOBS_LOCK:
@@ -554,7 +617,17 @@ class Handler(BaseHTTPRequestHandler):
         if aspect not in ASPECTS:
             aspect = "16:9"
 
-        params = {"palette": palette, "captions": captions, "aspect": aspect}
+        language = (fields.get("language") or "bn").strip().lower()
+        if language not in ("bn", "en"):
+            language = "bn"
+        model = (fields.get("model") or "small").strip().lower()
+        if model not in ("tiny", "base", "small", "medium"):
+            model = "small"
+        script_text = (fields.get("script") or "").strip()
+        duration_raw = (fields.get("duration") or "").strip()
+
+        params = {"palette": palette, "captions": captions, "aspect": aspect,
+                  "language": language, "model": model}
         job = new_job(params)
         job_dir = JOBS_DIR / job["id"]
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -563,6 +636,11 @@ class Handler(BaseHTTPRequestHandler):
             (job_dir / "input.srt").write_bytes(files["srt"][1])
         if "voice" in files:
             (job_dir / "input_voice.bin").write_bytes(files["voice"][1])
+        if script_text:
+            (job_dir / "script.txt").write_text(script_text, encoding="utf-8")
+            params["has_script"] = True
+        if duration_raw:
+            params["duration"] = duration_raw
         params["has_srt"] = "srt" in files
         params["has_voice"] = "voice" in files
         params["srt_name"] = files.get("srt", (None,))[0]
@@ -581,6 +659,9 @@ def main():
     threading.Thread(target=worker_loop, daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Zobvia Studio → http://{HOST}:{PORT}  (Ctrl+C to stop)")
+    print("Voice→SRT transcription (Whisper):",
+          f"ready via {WHISPER_PYTHON}" if WHISPER_PYTHON else
+          "not installed — SRT upload and Script box still work")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

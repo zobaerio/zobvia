@@ -23,6 +23,15 @@ app asks the first time it opens on a machine. A correct entry is
 remembered on that machine (marker file `~/.zobvia/access-ok`) — the
 password itself is never stored, only its SHA-256 hash is checked.
 
+## Subtitles — three ways (no SRT file needed)
+
+1. **Just voice:** upload only your voice recording — Whisper transcribes
+   it into subtitles automatically (the speech model, ~500 MB, downloads
+   on first use; Bengali and English supported).
+2. **Script box:** paste your typed script into the app's Script box —
+   Zobvia times it against your voice and builds the SRT itself.
+3. **SRT upload:** the classic way, if you already have an .srt file.
+
 ## Use
 
 1. Drag in your **SRT** file (required) and your **voice** file (optional).

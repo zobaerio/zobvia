@@ -715,3 +715,50 @@ class TestCreateVideoV14(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMakeSrt(unittest.TestCase):
+    """make_srt.py: script text + duration -> timed SRT (v1.5)."""
+
+    def _module(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "make_srt", SCRIPTS / "make_srt.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_cues_cover_duration_contiguously(self):
+        mod = self._module()
+        srt = mod.build_srt("প্রথম লাইন এখানে।\nদ্বিতীয় লাইন এখানে।", 10.0)
+        spans = []
+        for block in srt.strip().split("\n\n"):
+            lines = block.splitlines()
+            start, end = lines[1].split(" --> ")
+            spans.append((start, end))
+        self.assertEqual(spans[0][0], "00:00:00,000")
+        self.assertEqual(spans[-1][1], "00:00:10,000")
+        self.assertEqual(spans[0][1], spans[1][0])  # contiguous
+
+    def test_long_line_splits_and_respects_max(self):
+        mod = self._module()
+        long_line = " ".join(["শব্দ"] * 120) + "।"
+        srt = mod.build_srt(long_line, 20.0)
+        self.assertGreater(srt.count("-->"), 2)
+
+    def test_empty_script_rejected(self):
+        mod = self._module()
+        with self.assertRaises(ValueError):
+            mod.build_srt("   \n  ", 10.0)
+
+    def test_cli_end_to_end(self):
+        with tempfile.TemporaryDirectory() as td:
+            script = Path(td) / "script.txt"
+            script.write_text("Hello world.\nThis is a test.", encoding="utf-8")
+            out = Path(td) / "out.srt"
+            r = run("make_srt.py", "--text", str(script),
+                    "--duration", "8", "--out", str(out))
+            text = out.read_text(encoding="utf-8")
+            self.assertIn("00:00:08,000", text)
+            run("make_srt.py", "--text", str(script),
+                "--out", str(out), expect=2)

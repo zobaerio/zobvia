@@ -149,6 +149,7 @@ Two companion tools round out the converter:
 
 ```bash
 python3 scripts/transcribe.py --in voice.mp3 --out voice.srt   # media → SRT (Whisper)
+python3 scripts/make_srt.py --text script.txt --audio voice.mp3 --out voice.srt   # script → SRT
 python3 scripts/qc_check.py --file out/video.mp4 --expect-width 1920 --expect-height 1080 --expect-fps 30
 ```
 

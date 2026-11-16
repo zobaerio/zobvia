@@ -430,6 +430,7 @@ up front.
 | `scripts/create_video.py` | CREATE B5 fast path — SRT + palette → full data-driven project in one command |
 | `scripts/sfx_gen.py` | CREATE B8 |
 | `scripts/transcribe.py` | Media → SRT when the user has audio/video but no subtitles (faster-whisper or whisper CLI; exits 3 with install hint when neither exists) |
+| `scripts/make_srt.py` | Script text → timed SRT when the user has a typed script but no subtitles (timing proportional to grapheme count, measured from --duration or an --audio file) |
 | `scripts/qc_check.py` | After a render (B11/B12): ffprobe check of dimensions / fps / duration / audio |
 | `templates/remotion-starter/` | CREATE B5 scaffold source |
 

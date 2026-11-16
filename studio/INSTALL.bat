@@ -53,6 +53,19 @@ echo the first time it is used on this machine. Enter it now:
 python "%~dp0zobvia\scripts\access_check.py"
 echo (If you skipped it, the app will simply ask when it opens.)
 
+echo.
+echo Setting up the voice-to-subtitle AI (Whisper)...
+echo One-time download of about 250 MB - please wait.
+python -m venv "%~dp0whisper-venv"
+"%~dp0whisper-venv\Scripts\python.exe" -m pip install --quiet --upgrade pip
+"%~dp0whisper-venv\Scripts\python.exe" -m pip install --quiet faster-whisper "av==13.1.0"
+if errorlevel 1 (
+  echo Whisper setup did not finish - no problem: SRT upload and the
+  echo Script box inside the app will still work.
+) else (
+  echo Whisper ready - the speech model downloads on first use.
+)
+
 echo Creating Desktop shortcut...
 powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop') + '\Zobvia Studio.lnk'); $s.TargetPath='%~dp0ZobviaStudio.bat'; $s.WorkingDirectory='%~dp0'; $s.Description='Zobvia Studio - SRT + Voice to Video'; $s.Save()"
 

@@ -122,8 +122,28 @@
         <input type="file" id="fileVoice" accept="audio/*,.mp4,.m4a,.opus" hidden>
       </div>
     </div>
-    <p class="hint" style="margin-top:12px">ℹ️ শুধু voice দিলে (SRT ছাড়া) এই মেশিনে কাজ হবে না —
-      Whisper transcription এখানে installed নেই, তাই SRT ফাইলটা লাগবেই।</p>
+    <p class="hint" id="capLine" style="margin-top:12px">ℹ️ ক্ষমতা যাচাই হচ্ছে…</p>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+      <h2 style="font-size:15px">✍️ SRT নেই? Script লিখে দাও — SRT আমরাই বানাব</h2>
+      <p class="hint">তোমার বলা কথাগুলো এখানে লিখে/পেস্ট করলেই হবে — প্রতি লাইন একটা করে subtitle হবে,
+         আর timing বসবে voice-এর দৈর্ঘ্য অনুযায়ী। Voice না দিলে নিচে duration (সেকেন্ড) লিখে দাও।</p>
+      <textarea id="scriptText" rows="5" placeholder="এখানে তোমার script লেখো — প্রতি লাইনে একটা বাক্য…"
+        style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:#0a141f;color:var(--text);font-size:14.5px"></textarea>
+      <div class="row2" style="margin-top:10px">
+        <div>
+          <label class="lbl">Duration সেকেন্ডে (শুধু voice না থাকলে)</label>
+          <input type="number" id="scriptDuration" min="5" max="3600" placeholder="যেমন: 45"
+            style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#0a141f;color:var(--text)">
+        </div>
+        <div>
+          <label class="lbl">Voice-এর ভাষা (শুধু voice থেকে SRT বানালে)</label>
+          <select id="langSel" style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#0a141f;color:var(--text)">
+            <option value="bn" selected>বাংলা (Bengali)</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -208,6 +228,17 @@ async function tryUnlock(){
 document.getElementById("lockBtn").onclick = tryUnlock;
 lockPw.addEventListener("keydown", e=>{ if(e.key==="Enter") tryUnlock(); });
 checkAccess();
+async function checkCapabilities(){
+  const el = document.getElementById("capLine");
+  try{
+    const r = await fetch("/api/capabilities");
+    const d = await r.json();
+    el.textContent = d.whisper
+      ? "🎙️ Voice → SRT (Whisper) এই মেশিনে READY — শুধু voice দিলেও চলবে, SRT নিজে নিজে তৈরি হবে।"
+      : "ℹ️ এই মেশিনে Whisper নেই — SRT ফাইল দাও, অথবা নিচে Script লিখে দাও (SRT আমরাই বানিয়ে নেব)।";
+  }catch(e){ el.textContent = ""; }
+}
+checkCapabilities();
 const TONES = [
   ["creative","#4C1D95","#D946EF","#22D3EE","Creative — সৃজনশীল"],
   ["tech","#0A1929","#0EA5E9","#22D3EE","Tech — টেক"],
@@ -274,7 +305,14 @@ go.onclick = async ()=>{
   const voice = document.getElementById("fileVoice").files[0];
   if(srt) fd.append("srt", srt);
   if(voice) fd.append("voice", voice);
-  if(!srt && !voice){ showErr("আগে অন্তত SRT ফাইলটা দাও — Please choose an .srt file first."); return; }
+  const scriptVal = document.getElementById("scriptText").value.trim();
+  if(scriptVal){
+    fd.append("script", scriptVal);
+    const dur = document.getElementById("scriptDuration").value.trim();
+    if(dur) fd.append("duration", dur);
+  }
+  fd.append("language", document.getElementById("langSel").value);
+  if(!srt && !voice && !scriptVal){ showErr("অন্তত একটা কিছু দাও — SRT ফাইল, voice, অথবা নিচের Script লেখা।"); return; }
   fd.append("tone", tone);
   fd.append("hex", hexText.value.trim());
   fd.append("aspect", aspect);
