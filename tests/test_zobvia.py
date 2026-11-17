@@ -10,7 +10,8 @@ voiceover drift, honest --render failure, demo timeline registration),
 v1.3 (12 SFX types + peak levels, --genre scenes + caption defaults,
 --sfx-theme, 3D/genre pipeline registration),
 v1.4 (accent2/accent3 WCAG companions, full SFX coverage — every scene
-sounded, multi-colour + interactivity layer in the starter source).
+sounded, multi-colour + interactivity layer in the starter source),
+v1.6 (DOCUMENTARY mode bundle, 3D explainer sub-skill bundle).
 """
 import json
 import subprocess
@@ -771,3 +772,35 @@ class TestMakeSrt(unittest.TestCase):
             self.assertIn("00:00:08,000", text)
             run("make_srt.py", "--text", str(script),
                 "--out", str(out), expect=2)
+
+
+class BundledAdditionsV16(unittest.TestCase):
+    """v1.6.0: owner-supplied DOCUMENTARY prompt + zach-d-films 3D engine."""
+
+    def test_documentary_mode_bundled(self):
+        ref = ROOT / "references" / "master-documentary-prompt.md"
+        self.assertTrue(ref.is_file())
+        text = ref.read_text(encoding="utf-8")
+        self.assertIn("MASTER PROMPT START", text)
+        self.assertIn("MASTER PROMPT END", text)
+        self.assertIn("8-second scene map", text.lower())
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("PART D", skill)
+        self.assertIn("master-documentary-prompt.md", skill)
+
+    def test_3d_explainer_bundled(self):
+        base = ROOT / "extras" / "zach-d-films"
+        self.assertTrue((base / "SKILL.md").is_file())
+        for rel in ("engine/src/human.js", "engine/src/shots.js",
+                    "engine/src/props.js", "engine/src/main.js",
+                    "engine/render.mjs", "engine/captions.py",
+                    "engine/index.html", "engine/package.json",
+                    "tools/words.py"):
+            self.assertTrue((base / rel).is_file(), rel)
+        sub = (base / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("CHROME_PATH", sub)
+        render = (base / "engine" / "render.mjs").read_text(encoding="utf-8")
+        self.assertIn("CHROME_PATH", render)
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("PART E", skill)
+        self.assertIn("extras/zach-d-films", skill)

@@ -11,12 +11,14 @@
 [![Status](https://img.shields.io/badge/status-production--ready-brightgreen)](#-verification)
 [![Tests](https://github.com/zobaerio/zobvia/actions/workflows/tests.yml/badge.svg)](https://github.com/zobaerio/zobvia/actions/workflows/tests.yml)
 
-**One Claude skill. Two superpowers.**
+**One Claude skill. Four superpowers.**
 
 `LEARN` — paste a video link, get a reusable **style skill** (pacing, cuts, captions, zooms, SFX — measured in numbers, not adjectives).
 `CREATE` — paste an SRT, get a polished **1920×1080 / 30 fps motion-graphics video project**. The skill asks you exactly **one question — which colour?** — and decides everything else like a professional editor.
+`DOCUMENTARY` — give a documentary title or topic, get a complete **10-minute VOX-style documentary production package** (research, script, 8-second scene map, text-to-video prompts, audio package, YouTube SEO, thumbnails, checklist) in 10 approval-gated stages.
+`3D EXPLAINER` — a bundled Three.js sub-skill (`extras/zach-d-films/`) that makes **9:16 cartoon "what if" explainer shorts** with procedural people, props, slow-motion impacts and voice-timed captions.
 
-[Quick start](#-quick-start) · [Full video guide](#-how-to-make-a-video--the-complete-guide) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-217-named-items) · [Examples](examples/)
+[Quick start](#-quick-start) · [Full video guide](#-how-to-make-a-video--the-complete-guide) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-235-named-items) · [Examples](examples/)
 
 ![Zobvia — how it works](assets/demo.svg)
 
@@ -328,7 +330,7 @@ Most tools break Bengali. zobvia doesn't:
 - Latin tool names (*ChatGPT, Midjourney*) sized +4–6% inside Bengali lines
 - Full rules in [`references/bengali-text-rules.md`](references/bengali-text-rules.md), RTL + Devanagari in [`references/multilingual-typography.md`](references/multilingual-typography.md)
 
-## 📚 Capability index (217 named items)
+## 📚 Capability index (235 named items)
 
 | Library | Count | File |
 |---|---:|---|
@@ -349,8 +351,10 @@ Most tools break Bengali. zobvia doesn't:
 | Colour tones (× 6 swatches, WCAG-checked) | 11 | `references/color-system.md` |
 | Platform specs (YT, Shorts, Reels, TikTok, FB, LinkedIn) | 7 | `references/platform-specs.md` |
 | v1.4 systems (multi-colour accents, keyword colouring, karaoke pop, SFX coverage, progress bar, scene counter) | 6 | `references/sfx-library.md` + starter components |
+| DOCUMENTARY mode stages (research → script → scene map → prompts → audio → SEO → thumbnails → checklist) | 10 | `references/master-documentary-prompt.md` |
+| 3D explainer sub-skill (procedural humans, props kit, shot system, materials/textures, caption builder, word-timing adapter, renderer) | 8 | `extras/zach-d-films/` |
 
-Plus: 27 reference files total, 11 working scripts, a compilable Remotion starter
+Plus: 28 reference files total, 11 working scripts, a compilable Remotion starter
 ([`templates/remotion-starter/`](templates/remotion-starter/)), voiceover workflow,
 licensing-safe music/SFX sourcing, export matrix, project workflow, QC checklist,
 client brief template, and freelancer pricing guidance (Bangladesh + international).

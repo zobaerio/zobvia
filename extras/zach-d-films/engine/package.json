@@ -1,0 +1,11 @@
+{
+  "name": "zobvia-3d-explainer-engine",
+  "private": true,
+  "type": "module",
+  "description": "Three.js 3D cartoon explainer engine (zach-d-films sub-skill, bundled with Zobvia). Run: npm install && npx playwright install chromium",
+  "dependencies": {
+    "three": "^0.180.0",
+    "@fontsource/montserrat": "^5.2.5",
+    "playwright": "^1.57.0"
+  }
+}

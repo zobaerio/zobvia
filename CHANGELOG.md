@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.6.0 — 2026-11-17
+
+Three owner-supplied additions: a documentary mode, a stronger LEARN, and a real-3D explainer.
+
+### Added
+- **DOCUMENTARY mode (Part D).** The owner's VOX-style documentary Master Prompt, saved verbatim as `references/master-documentary-prompt.md` and wired into SKILL.md: a title/topic becomes a complete 10-minute documentary production package in 10 approval-gated stages (research, ~1,450-word script, 75 x 8-second scene map, text-to-video prompts, voice/music/sound package, YouTube SEO packaging, thumbnail package, production checklist). Its stage gates replace CREATE's one-question rule inside documentary projects; the approved script can flow back into CREATE via make_srt/transcribe.
+- **3D EXPLAINER sub-skill (Part E)** at `extras/zach-d-films/`: a real Three.js cartoon explainer engine (procedural poseable humans, props with slow-motion impacts and the red force-ripple, bloom/DOF, 9:16), shared by the owner (zach-d-films skill, with its worked 29.5 s armour-vs-bullet example). The original depended on an external "kit" that was not shared; Zobvia's bundle is self-contained: `engine/package.json` (three, @fontsource/montserrat, playwright), `tools/words.py` (faster-whisper word timings feeding the original captions.py), and `CHROME_PATH` support in render.mjs. No bundled TTS (bring your own voice). Verified on a GPU-less Linux VM with GL=swiftshader: stills and a short video render of the example.
+
+### Changed
+- **LEARN strengthened with the owner's "watch" skill methods:** per-pair note taxonomy (shot type, framing, exact on-screen text, overlays, colour look), caption lead/lag + casing + punctuation + dwell measurements, voice pace and jump-cut detection, SFX search keywords in the SFX map, dense-first-60-seconds + windowed re-runs for long videos, a CLAUDE.md "Learned styles" index line, and the same-name style rule (ask, or save as -v2). Also fixed: A1 documented `--slug`, but extract.py takes `--name`.
+- Capability index: 217 -> **235** named items (+10 documentary stages, +8 3D explainer pieces). Reference files: 27 -> 28.
+
+
 ## 1.5.1 — 2026-11-16
 
 Bug fix: a .wav voiceover could silently render with no voice at all.

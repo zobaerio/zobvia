@@ -1,13 +1,14 @@
 ---
 name: zobvia
-description: "Two modes. LEARN: watch a video and extract its editing style into a reusable style skill — use when the user says 'watch this', 'learn this style', 'analyse this video', pastes a video link (YouTube, Shorts, Reels, TikTok) or gives a local video file without an SRT. CREATE: turn an SRT/subtitle file into a Remotion motion-graphics video (1920x1080, 30fps, word-by-word animation, SFX only, full Bengali support) — use when the user says 'make a motion graphics video from this SRT', 'edit in <style> style', pastes or attaches an .srt file, or gives both a video and an SRT (learn the style, then create in it)."
+description: "Three modes. LEARN: watch a video and extract its editing style into a reusable style skill — use when the user says 'watch this', 'learn this style', 'analyse this video', pastes a video link (YouTube, Shorts, Reels, TikTok) or gives a local video file without an SRT. CREATE: turn an SRT/subtitle file into a Remotion motion-graphics video (1920x1080, 30fps, word-by-word animation, SFX only, full Bengali support) — use when the user says 'make a motion graphics video from this SRT', 'edit in <style> style', pastes or attaches an .srt file, or gives both a video and an SRT (learn the style, then create in it). DOCUMENTARY: turn a documentary title or topic into a complete 10-minute VOX-style YouTube documentary production package (research, script, 8-second scene map, text-to-video prompts, audio package, SEO packaging, thumbnails, checklist) in 10 approval-gated stages — use when the user says 'documentary', 'ডকুমেন্টারি', 'make a documentary about', or gives a documentary title/topic."
 ---
 
 # Zobvia
 
-One skill, two jobs: **learn how a video is edited**, and **create a new
-video in a learned or built-in style**. Style is learned; footage, voice,
-and music are never reused.
+One skill, three jobs: **learn how a video is edited**, **create a new
+video in a learned or built-in style**, and **plan a full documentary
+production package** from a title or topic. Style is learned; footage,
+voice, and music are never reused.
 
 ## Philosophy
 
@@ -49,6 +50,8 @@ first LEARN or CREATE run on a machine:
 | Video link or file, no SRT | LEARN |
 | Video + SRT | LEARN first, then CREATE in that style |
 | "edit in `<style>` style" + SRT | CREATE using `.claude/skills/style-<slug>/` |
+| Documentary title/topic, "documentary", "ডকুমেন্টারি" | DOCUMENTARY |
+| 3D cartoon explainer / "what if" short with characters | 3D EXPLAINER (Part E) |
 | Neither, or genuinely unclear | Ask one question: learn or create? |
 
 Auto-selection rules:
@@ -62,6 +65,10 @@ Auto-selection rules:
 4. A style name with no SRT and no video is not enough to start CREATE —
    ask for the SRT (this is a missing-input request, not a design
    question, and does not count against the one-question rule in B2).
+5. A documentary request (a title/topic plus documentary intent, e.g.
+   "make a documentary about X") selects DOCUMENTARY even with no SRT
+   and no video. Inside a documentary project, the master prompt's
+   stage-approval gates replace CREATE's one-question rule.
 
 ---
 
@@ -81,7 +88,7 @@ attempt extraction with a partial toolchain.
 
 ### A1 — Extract
 
-Run `scripts/extract.py <url-or-path> --slug <slug>`. Outputs land in
+Run `scripts/extract.py <url-or-path> --name <slug>`. Outputs land in
 `references/watch/<slug>/`:
 
 | File | Contents |
@@ -94,28 +101,53 @@ Run `scripts/extract.py <url-or-path> --slug <slug>`. Outputs land in
 | `audio_profile.json` | Loudness, silence, beat/onset and SFX-event profile |
 | `summary.json` | Video metadata: duration, fps, resolution, totals |
 
-If download or transcription fails, read
-`references/troubleshooting.md` before retrying. Videos over 3 minutes
-get the thin pass (wider frame interval) — note that in the analysis.
+If a download fails, retry once with a fresh yt-dlp
+(`pip install -U yt-dlp`); if it still fails, ask the user to download
+the video and give the file path. For other failures, read
+`references/troubleshooting.md` before retrying.
+
+Long videos (over 3 minutes): run the thin pass first (wider frame
+interval), then re-run dense windows with `--start` / `--end` on the
+interesting ranges. Always study the first 60 seconds densely — the
+hook decides the style. State clearly in the analysis which time
+ranges were studied densely and which were only sampled.
 
 ### A2 — Frame-pair analysis
 
 Read `pairs/` **10 pairs at a time**. For each pair record, in
-`references/watch/<slug>/analysis/timeline.md`: what changed across the
-cut (subject, scale, angle, background, text), the transition type
-(hard cut, zoom, slide, mask, etc. — vocabulary in
-`references/animation-library.md`), and the shot duration from
-`cuts.json`. Save the file after every batch of 10. Never analyse from
-memory of the video; only from the frames on disk.
+`references/watch/<slug>/analysis/timeline.md`:
+
+- Time range and shot duration from `cuts.json`.
+- Shot type: talking head, b-roll, screen recording, text card,
+  graphic, product shot.
+- Framing: close / medium / wide, and the subject's position.
+- What changed across the cut (subject, scale, angle, background,
+  text) and the transition type (hard cut, zoom in/out, punch-in, pan,
+  whip, fade, glitch, shake, speed ramp, none — vocabulary in
+  `references/animation-library.md`).
+- On-screen text: the exact words, position, font look (bold / thin /
+  serif / sans), size, colours, outline or shadow, background box.
+- Overlays: emojis, stickers, arrows, icons, lower thirds, progress
+  bars, logos.
+- Colour look: warm / cool, contrast, saturation, filters, vignette,
+  grain.
+
+Save the file after every batch of 10. Never analyse from memory of
+the video; only from the frames on disk.
 
 ### A3 — Caption analysis
 
 From `words.json` and the frames, measure: words per caption line,
 lines per caption block, words on screen at once, caption position
-(% from bottom), font weight/size relative to frame height, highlight
-style (colour swap, scale, background box, karaoke fill), and whether
-captions are word-by-word, phrase, or full-line. Record numbers, not
-impressions.
+(% from bottom) and safe margins, font weight/size relative to frame
+height, highlight style (colour swap, scale, background box, karaoke
+fill), and whether captions are word-by-word, phrase, or full-line.
+Also measure: caption timing offset (do words land exactly on the
+spoken word, or slightly before/after — in ms), casing (UPPER / Title
+/ lower), punctuation shown or hidden, emojis near words, which words
+get emphasis (numbers, keywords, verbs) and how, typical words per
+second, and the longest time a caption stays on screen. Record
+numbers, not impressions.
 
 ### A4 — Audio, SFX, and music analysis
 
@@ -124,12 +156,18 @@ classify each recurring sound against the 7 types in
 `references/sfx-library.md`, count SFX events per 60 s, note what visual
 event each sound is locked to, and record music presence (genre feel,
 BPM if measurable, volume relative to voice in dB, where it drops out).
+For the voice: measure pace (words per second), pause pattern, and
+whether silences are cut out (jump cuts). For every SFX type, also
+write search keywords so the sound can be found later on free SFX
+sources (e.g. Openverse).
 Write the result as an **SFX map** — JSON in
 `analysis/sfx-map.json`:
 
 ```json
 { "events": [ { "at_sec": 12.4, "type": "soft pop", "locked_to": "word highlight", "gain_db": -18 } ],
-  "events_per_60s": 6, "music": { "present": true, "relative_to_voice_db": -14 } }
+  "events_per_60s": 6, "music": { "present": true, "relative_to_voice_db": -14 },
+  "voice": { "words_per_sec": 2.6, "silences_cut": true },
+  "sfx_search_keywords": { "soft pop": "soft pop sound effect free" } }
 ```
 
 ### A5 — Hook and ending
@@ -156,12 +194,21 @@ Copy the sampled palette, SFX map, and 3–5 representative frames into
 that folder as supporting references. The saved skill must be usable
 by CREATE without re-watching the source.
 
+Then index it: add one line under a "Learned styles" heading in the
+project `CLAUDE.md` (style name + when to use it; create the heading
+if missing). If an editor skill already exists in `.claude/skills/`
+(a folder with "editor" in its name), add one short line to it
+pointing at the new style skill — do not rewrite that editor skill.
+If a style skill with the same name already exists, ask before
+overwriting, or save as `style-<slug>-v2`.
+
 ### A8 — Report
 
 Tell the user: style name and slug, the 5–8 headline numbers, hook
-type, caption style, SFX density, and the saved path. Offer CREATE
-("give me an SRT and I'll cut it in this style") — do not start CREATE
-without an SRT.
+type, caption style, SFX density, the saved path, anything that could
+not be learned and why, and one example prompt ("Edit my video in the
+style-<slug> style"). Offer CREATE ("give me an SRT and I'll cut it
+in this style") — do not start CREATE without an SRT.
 
 ---
 
@@ -386,6 +433,57 @@ fills it (A7); CREATE reads it (B0). Do not invent extra sections in a
 learned style, and do not omit sections — write `not measured` where
 LEARN could not measure.
 
+## PART D — DOCUMENTARY
+
+Turn one documentary title or topic into a complete 10-minute YouTube
+documentary production package, VOX-style paper-collage look, in 10
+approval-gated stages. The full, canonical workflow is
+`references/master-documentary-prompt.md` (owner-supplied, verbatim) —
+read it before starting a documentary project and follow it exactly,
+including its exact opening question and its exact stage-closing lines.
+
+The 10 stages: (1) project setup, (2) research and factual foundation,
+(3) full ~1,400–1,500-word narration script, (4) script revision gate,
+(5) 8-second scene map (~75 scenes), (6) text-to-video prompts in
+batches of 10, (7) voiceover direction + music prompt + sound-design
+map, (8) YouTube SEO packaging, (9) thumbnail package, (10) final
+production checklist.
+
+Rules specific to this mode:
+
+- **One stage at a time.** Never produce two stages together, never
+  continue without the user's clear approval ("Approved", "ঠিক আছে",
+  "Next", "Proceed"). A revision request redoes only the current stage.
+- **Accuracy before drama.** Every factual claim traces to Stage 2
+  research; never invent facts, dates, quotes, or sources. If research
+  cannot verify something, say so in the package.
+- **The deliverable is a package, not a render.** DOCUMENTARY produces
+  the script, scene map, and generation prompts. From there the user
+  may (a) generate scenes with an external text-to-video tool, or
+  (b) hand the approved script back to CREATE: `scripts/make_srt.py`
+  turns the script into a timed SRT (or the recorded voiceover into
+  one via `scripts/transcribe.py`), and CREATE renders it as a
+  motion-graphics video.
+- **Never use em dashes** inside documentary deliverables (the master
+  prompt's rule): commas, colons, parentheses, or normal hyphens.
+- Save each approved stage to disk in the project folder before asking
+  for the next approval, so a documentary in progress survives a
+  crashed session.
+
+## PART E — 3D EXPLAINER (bundled sub-skill)
+
+For a 3D cartoon "what if" explainer short (9:16, procedural cartoon
+people and props, slow-motion impacts, 1–3 word captions timed to a
+voiceover), use the bundled sub-skill at `extras/zach-d-films/` —
+read its `SKILL.md` and follow it. It is a real Three.js engine
+(`extras/zach-d-films/engine/`), NOT one of CREATE's CSS-3D pipelines:
+it renders WebGL in headless Chrome via Playwright, at 720×1280,
+then upscales to 1080×1920. It ships with a worked example ("Could
+ancient armour stop a bullet?", 29.5 s). Word timings come from
+`extras/zach-d-films/tools/words.py` (faster-whisper). Bring your own
+voiceover; there is no bundled TTS. On a GPU-less machine set
+`GL=swiftshader` (renders, but slowly).
+
 ## Hard Rules
 
 1. Measurable numbers over adjectives — in analysis, plans, and reports.
@@ -398,7 +496,8 @@ LEARN could not measure.
 6. Never rename or fabricate assets; use only what exists in `public/`,
    exactly as named.
 7. CREATE asks exactly one question — colour, in the SRT's language.
-   Never a second design question.
+   Never a second design question. (DOCUMENTARY mode is the exception:
+   it follows its own stage-approval gates, Part D.)
 8. SFX only in CREATE output. No music track, ever.
 9. One font family per video.
 10. Default delivery is Preview (ZIP + commands). Render only on request.
@@ -456,3 +555,5 @@ up front.
 | `references/freelancer-pricing.md` | Pricing/packages guidance (BD + international) |
 | `references/prompt-library.md` | Ready prompts that trigger each capability (32) |
 | `references/master-create-prompt.md` | The flagship CREATE prompt (owner-supplied, verbatim) — paste into any Claude session with an SRT; runs the full pipeline with one colour question |
+| `references/master-documentary-prompt.md` | The flagship DOCUMENTARY prompt (owner-supplied, verbatim) — paste into any Claude session with a documentary title/topic; runs the 10-stage gated documentary package workflow (Part D) |
+| `extras/zach-d-films/SKILL.md` | 3D EXPLAINER sub-skill (Part E) — Three.js cartoon explainer shorts; read before any 3D explainer job |
