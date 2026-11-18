@@ -19,7 +19,11 @@ orchestrates the others (Part K), a Remotion-on-footage bridge
 engine (Part N), a QC checker (Part O), a subtitle engine
 (Part P), a transcription engine (Part Q), a typed video-editing
 graph executor (Part R) and a deterministic motion-graphics
-renderer (Part S).
+renderer (Part S), face/text/object detection (Part T), AI
+dubbing/narration (Part U), speaker diarization (Part V),
+verified media ingest (Part W), an artifact verification
+engine (Part X) and an ImageMagick still-image toolkit
+(Part Y).
 
 ## Philosophy
 
@@ -77,6 +81,12 @@ first LEARN or CREATE run on a machine:
 | Speech to transcribe (recognition only) | TRANSCRIPTION (Part Q) |
 | A typed edit graph to execute (trim/cut/concat/speed/overlay ops) | VIDEO EDITING (Part R) |
 | Deterministic titles / lower thirds / overlays on a video | MOTION GRAPHICS (Part S) |
+| Faces / text / objects to find in frames, or boxes to track/reframe | DETECTION (Part T) |
+| Narration / dubbing / audio description to synthesize | DUBBING (Part U) |
+| Who spoke when (anonymous speaker turns) | DIARIZATION (Part V) |
+| Camera cards / downloads to offload with verified hashes | INGEST (Part W) |
+| A generated document/artifact to inspect or verify structurally | ARTIFACTS (Part X) |
+| Still images to resize / convert / compose / strip | IMAGEMAGICK (Part Y) |
 | Neither, or genuinely unclear | Ask one question: learn or create? |
 
 Auto-selection rules:
@@ -738,6 +748,85 @@ engine: MOTION GRAPHICS for fast deterministic overlays, REMOTION
 (Part L) for rich React animation, HYPERFRAMES (Part J) for HTML
 scenes. Upstream: kajisho5/motion-graphics-skill, MIT.
 
+## PART T — DETECTION (bundled detection-skill)
+
+For finding things in frames — face/text/object boxes, shot
+boundaries — and for working with box documents (tracking,
+reframing to a subject, speaker/PII reports), use the bundled
+detection-skill at `extras/detection-skill/`: read its
+`SKILL.md`. 10 commands via `PYTHONPATH=extras/detection-skill/src
+python3 -m detection_skill.cli <command>`. It reports boxes in
+time, NEVER identities. The vision engines are optional installs:
+its `doctor` says plainly which of faces/text/objects/shots are
+ready on this machine — believe it; the document-level tools
+(tracks, reframe, speakers, pii) work on existing detection
+documents without an engine. Upstream: kajisho5/detection-skill,
+MIT.
+
+## PART U — DUBBING (bundled dubbing-skill)
+
+For synthesized speech — narration, voice replacement/dubbing,
+audio description — use the bundled dubbing-skill at
+`extras/dubbing-skill/`: read its `SKILL.md`. Commands (narrate,
+dub, describe, fit, watermark, terms) via `PYTHONPATH=
+extras/dubbing-skill/src python3 -m dubbing_skill.cli <command>`.
+It drives LOCAL offline TTS engines (e.g. Chatterbox, Kokoro);
+none is installed by the bundle — run its `doctor`/`engines`
+first and install the engine the user approves before promising
+audio. Pair with SUBTITLE translate (Part P) for a full
+translate -> dub -> mux pipeline, and keep the user's own voice
+rights/consent explicit for any voice cloning. Upstream:
+kajisho5/dubbing-skill, MIT.
+
+## PART V — DIARIZATION (bundled diarization-skill)
+
+For who-spoke-when — anonymous speaker turns, assigning turns to
+a transcript, checking/scoring a diarization — use the bundled
+diarization-skill at `extras/diarization-skill/`: read its
+`SKILL.md`. Commands (diarize, assign, check, score, enroll,
+name) via `PYTHONPATH=extras/diarization-skill/src python3 -m
+diarization_skill.cli <command>`. Speaker labels are anonymous
+ids, never names, unless the user enrolls a voice with recorded
+consent. `diarize` needs pyannote.audio installed; `assign` and
+`check` work without it. Upstream: kajisho5/diarization-skill,
+MIT.
+
+## PART W — INGEST (bundled ingest-skill)
+
+For bringing media in safely — offloading a camera card or
+recorder folder to one or more destinations with hash
+verification, an inventory, or fetching a URL the same verified
+way — use the bundled ingest-skill at `extras/ingest-skill/`:
+read its `SKILL.md`. Commands (offload, verify, inventory,
+fetch) via `PYTHONPATH=extras/ingest-skill/src python3 -m
+ingest_skill.cli <command>`. Every copy is hash-checked against
+its manifest; `fetch` additionally needs the yt-dlp extra.
+Upstream: kajisho5/ingest-skill, MIT.
+
+## PART X — ARTIFACTS (bundled artifacts-skill)
+
+For producing and VERIFYING generated documents/artifacts —
+structural inspection, page renders for a visual look, receipts
+with evidence — use the bundled artifacts-skill at
+`extras/artifacts-skill/`: read its `SKILL.md`. Commands
+(inspect, plan, execute, render, verify, look, receipt) via
+`PYTHONPATH=extras/artifacts-skill/src` and its CLI entry
+(`artifact_skill.cli.main`). It checks structure with evidence;
+it does not judge taste. Upstream: kajisho5/artifacts-skill,
+MIT.
+
+## PART Y — IMAGEMAGICK (bundled imagemagick-skill)
+
+For still-image work — resize, convert, crop, pad, montage,
+overlay, thumbnails, metadata strip, brand kits — use the
+bundled imagemagick-skill at `extras/imagemagick-skill/`: read
+its `SKILL.md`. 21 tools in `scripts/` driven through the
+ImageMagick `magick` binary, which must be installed on the
+machine (the bundle does not include it; `scripts/_contract.py
+doctor --json` reports honestly when it is missing). Prefer it
+for batch stills; use THUMBNAIL (Part M) for decided video
+thumbnails. Upstream: kajisho5/imagemagick-skill, MIT.
+
 ## Hard Rules
 
 1. Measurable numbers over adjectives — in analysis, plans, and reports.
@@ -825,3 +914,9 @@ up front.
 | `extras/transcription-skill/SKILL.md` | TRANSCRIPTION sub-skill (Part Q) — speech recognition; read before any transcription job |
 | `extras/video-editing-skill/SKILL.md` | VIDEO EDITING sub-skill (Part R) — typed edit-graph execution; read before any graph edit job |
 | `extras/motion-graphics-skill/SKILL.md` | MOTION GRAPHICS sub-skill (Part S) — deterministic titles/overlays; read before any motion-graphics job |
+| `extras/detection-skill/SKILL.md` | DETECTION sub-skill (Part T) — face/text/object boxes; read before any detection job |
+| `extras/dubbing-skill/SKILL.md` | DUBBING sub-skill (Part U) — narration/dubbing synthesis; read before any dubbing job |
+| `extras/diarization-skill/SKILL.md` | DIARIZATION sub-skill (Part V) — speaker turns; read before any diarization job |
+| `extras/ingest-skill/SKILL.md` | INGEST sub-skill (Part W) — verified media offload; read before any ingest job |
+| `extras/artifacts-skill/SKILL.md` | ARTIFACTS sub-skill (Part X) — artifact inspection/verification; read before any artifact job |
+| `extras/imagemagick-skill/SKILL.md` | IMAGEMAGICK sub-skill (Part Y) — still-image toolkit; read before any still-image batch job |

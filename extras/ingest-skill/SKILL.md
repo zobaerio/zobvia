@@ -1,0 +1,66 @@
+---
+name: ingest-skill
+description: Offload camera cards and recorders safely - copy a card folder to one or more drives with a sha256 (or xxh64) read-back of every file, write an ASC MHL history per drive, never overwrite, resume an interrupted copy, re-verify a backup later and list the clips (duration, codecs, resolution, timecode). Use when asked to ingest, offload, back up or verify footage, make an MHL, or make a clip list of a shoot (one entry per recording, spanned files grouped, camera sidecars, reel / card id), or to download a video URL as verified footage (`ingest fetch`, yt-dlp). Local, except `fetch`.
+---
+
+> **Bundled with Zobvia** (extras/ingest-skill/) — see the sub-skill parts of Zobvia's SKILL.md. Source: [kajisho5/ingest-skill](https://github.com/kajisho5/ingest-skill) v0.1.0 (main @ 38f2c29), MIT License (LICENSE in this folder). Bundled: SKILL.md, `src/`, `pyproject.toml`. Not bundled: docs, tests, benchmarks, brand. URL fetching needs its `fetch` extra (yt-dlp); local-file ingest works without it.
+
+
+# ingest-skill
+
+Run `ingest <command> ... --json` (installed by `pip install -e .`). Every command prints one JSON document.
+
+| Task | Command |
+|---|---|
+| Copy a card to two drives | `ingest offload /Volumes/CARD_A --dest /Volumes/SSD1/Footage --dest /Volumes/SSD2/Footage --project 2026-10-30_event --json` |
+| See what would be copied | add `--dry-run` (writes nothing) |
+| Use xxHash64 instead of sha256 | add `--hash xxh64` (needs `pip install -e ".[xxhash]"`; check with `ingest doctor --json`) |
+| Make editing proxies during the offload | add `--proxy` (needs ffmpeg-skill; check `ffmpeg-skill` in `ingest doctor --json`) |
+| Show progress, speed and time left | add `--progress` to offload (JSON lines on stderr: `bytes_done` / `bytes_total`, `eta_s`, `destinations[].mb_s`; a `slow_destination` event names a slow drive) |
+| Offload a recording still being written | add `--follow` (sealed once unchanged for `--settle` seconds, default 30; `--follow-for 60` to stop after a minute and leave partial copies) |
+| Re-check a backup | `ingest verify /Volumes/SSD1/Footage/2026-10-30_event/CARD_A --json` |
+| Clip list | `ingest inventory /Volumes/SSD1/Footage/2026-10-30_event/CARD_A --json` |
+| Group cameras and a recorder for multicam | `ingest inventory /Volumes/SSD1/Footage/ev/CAM_A /Volumes/SSD1/Footage/ev/CAM_B /Volumes/SSD1/Footage/ev/REC --json` (`sync_groups`) |
+| Name the copy after the card's reel | add `--name-by reel` to offload (`--reel B007` to set it yourself) |
+| Download a video URL as footage | `ingest fetch "<url>" --dest /Volumes/SSD1/Footage --project 2026-10-30_event --json` (needs `pip install -e ".[fetch]"`; check `yt-dlp` in `ingest doctor --json`) |
+| What this skill declares | `ingest contract --json`, `ingest doctor --json` |
+
+## What it guarantees
+
+- The source card is only read. It is never modified, deleted or formatted.
+- Each copy is written to a temporary name, flushed to disk, renamed, then read back; it counts as copied only when the read-back sha256 equals the hash taken while reading the source.
+- The card is read once per file, however many destinations: the same bytes are hashed and written to every drive in parallel, then each drive is read back on its own. If one drive fails (full, unplugged), only that drive's copy of the file fails; the other drives are still complete and verified.
+- An existing file at the destination is never overwritten: identical content is skipped (so a re-run resumes an interrupted offload), different content is a **conflict** and the run is incomplete (exit 3).
+- Each destination gets `ingest-manifest.json` (path, size, sha256 or xxh64, mtime of every file) and an ASC MHL history in `ascmhl/`: one new `.mhl` generation per run (process `transfer`; c4 with sha256, xxh64 with xxh64) and `ascmhl_chain.xml`. A source folder's own `ascmhl/` history is carried into each copy and continued.
+- `verify` re-hashes against the manifest and the ASC MHL history (sha256, xxh64, c4, md5, sha1; xxh3 / xxh128 with the extra) and reports missing, changed and unlisted files; each entry of `failures` has a `code`, the `hash`, the `expected` and the `actual` value. It writes nothing.
+- Every file of the card is copied unchanged, whatever its structure: sidecars, index files, playlists and proxies are needed by NLEs, so never copy only the media files.
+- Card housekeeping (`.DS_Store`, `._*`, `.Spotlight-V100`, `System Volume Information`, ...) and symbolic links are listed as skipped, never copied or followed.
+- A destination inside the source (or the other way round), the same destination twice, or no destination is refused before anything is written (exit 2).
+- With `--follow`, a file still being recorded is copied as it grows (new bytes only, each range read back) and listed under `growing` in the manifest; it is sealed (manifest `files`, ASC MHL) only once its size and mtime have been unchanged for the settle window. A partial copy is never in the ASC MHL.
+- `fetch` downloads one video into a staging folder, then copies it exactly like a card (read-back, manifest, ASC MHL), so `verify` and `inventory` work on it. The manifest's `fetch` record holds the source URL with credentials removed (userinfo, token / signature / key / password-like parameter values), the extractor, the yt-dlp version, the selected `format_id` and the times; never cookies or request headers.
+
+## Rights
+
+Fetch only what the user has the right to download (their own footage, licensed or permitted material); if that is unclear, ask before fetching. There is no DRM, login or cookie option, and none should be worked around: a protected or login-only video fails as `FETCH_FAILED`, report it as such.
+
+Exit codes: `0` ok, `2` refused (including `HASH_UNAVAILABLE`: xxh64 without the xxhash extra, `FETCH_UNAVAILABLE`: fetch without the yt-dlp extra, `URL_INVALID`, `NAME_INVALID` and `REEL_INVALID`), `3` incomplete (including `FETCH_FAILED`) (conflict, failure, missing or changed file, damaged ASC MHL history).
+
+## Report it honestly
+
+- Say "verified" only when `ok` is true. If `ok` is false, name the conflicts / failures from the JSON; do not call the backup done.
+- When one destination has `failed` files, name that drive: the other destinations are complete. Its `ingest-manifest.json` lists the files under `failed` and its `verify` is not ok (`copy_failed`); re-run the same offload after fixing the drive to complete it (only the missing files are written).
+- `mhl_failed` or an `action="failed"` record means a file differs from what its ASC MHL history recorded earlier: report it as damage, not as a new version.
+- If xxh64 is `unavailable` in `doctor`, say so and offer sha256 (the default) or installing the extra; do not fall back silently.
+- If `yt-dlp` is `unavailable` in `doctor`, `fetch` is refused: say so and offer installing the extra; do not download some other way. Quote URLs from the `fetch` record (redacted), never the one the user pasted if it carried a token. When `staging.kept` is true, the download is still in `staging.path`: say so.
+- `inventory` lists recordings, not files: a `spanned` clip's `members` are one recording in order; an `incomplete` one continues on another card. Report the clip count from `clip_count`, and the reel with its `source` (`operator`, `manifest`, `clip_names`, `fingerprint`); a `fingerprint` reel is not a camera reel.
+- Sidecar `metadata` holds only what the camera wrote; a missing key is unknown. `warnings` (a clip missing from MEDIAPRO.XML, an unreadable playlist or sidecar) are card-health notes to pass on.
+- `inventory` reads clip facts with `ffprobe`. When `probed` is false the facts are **unknown**, not zero (ffprobe missing, or a file it cannot read).
+- A `growing` file (offload status, `destinations[].growing`, verify `growing`, inventory `"growing": true`) is a verified **partial** copy of a recording still in progress: say it can be edited but is not a finished backup, and that re-running `offload --follow` (or a plain offload once recording has ended) completes and seals it. Never call it verified.
+- A `sync_group` is a **candidate** from the devices' clocks (`basis`: timecode, utc or local), not a measured sync: pass its `next` call to ffmpeg-skill `multicam` (or `sync`) and report the offsets that measures. `sync` facts that are null are unknown; `ltc.checked: false` means the audio was not analysed (no ffmpeg), not that there is no LTC.
+- A `slow_destination` warning (or one in `destinations[].warnings`) names the drive that sets the pace: say which one and suggest another port, cable or drive; it is not a failure. `eta_s` is an estimate from the rate so far (null with `--follow`).
+- `proxy.failed` items are proxies that ffmpeg-skill could not make: the copies are still verified (`ok` is about the copies only); name the clips and the error. `proxy.encoder` is `hw` only when ffmpeg-skill's own doctor reported a hardware encoder its tools can use (VideoToolbox); otherwise say it ran on the CPU.
+- Two copies on the same physical drive are not a backup; say so if both destinations are on one volume.
+
+## Not this skill's job
+
+Playlists, logins / cookies and DRM-protected media in `fetch`; editing or transcoding (video-editing-skill / ffmpeg-skill), encoding proxies (ffmpeg-skill `proxy`; `offload --proxy` only queues it), cloud upload (publish-skill), deleting or formatting the card, ASC MHL directory hashes / rename / flatten / collections (not yet), P2 / Canon XF / RED structures (listed as generic files).

@@ -16,7 +16,9 @@ v1.7 (EDIT mode: bundled ffmpeg-skill toolset),
 v1.8 (BLENDER, AUDIO PRODUCTION, COLOR GRADING, HYPERFRAMES bundles),
 v1.9 (BRAIN, REMOTION, THUMBNAIL bundles),
 v1.10 (MEDIA ANALYSIS, QC, SUBTITLE, TRANSCRIPTION, VIDEO EDITING,
-MOTION GRAPHICS bundles).
+MOTION GRAPHICS bundles),
+v1.11 (DETECTION, DUBBING, DIARIZATION, INGEST, ARTIFACTS,
+IMAGEMAGICK bundles).
 """
 import json
 import subprocess
@@ -905,4 +907,27 @@ class BundledAdditionsV16(unittest.TestCase):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         for part in ("PART N", "PART O", "PART P", "PART Q",
                      "PART R", "PART S"):
+            self.assertIn(part, skill)
+
+
+    def test_specialist_bundles(self):
+        bundles = {
+            "detection-skill": ("src/detection_skill/cli.py", "schemas"),
+            "dubbing-skill": ("src/dubbing_skill/cli.py",),
+            "diarization-skill": ("src/diarization_skill/cli.py", "schemas"),
+            "ingest-skill": ("src/ingest_skill/cli.py",),
+            "artifacts-skill": ("src/artifact_skill/cli/main.py", "examples"),
+            "imagemagick-skill": ("scripts/resize.py", "skill.contract.json"),
+        }
+        for name, keys in bundles.items():
+            base = ROOT / "extras" / name
+            self.assertTrue((base / "SKILL.md").is_file(), name)
+            self.assertTrue((base / "LICENSE").is_file(), name)
+            for rel in keys:
+                self.assertTrue((base / rel).exists(), f"{name}/{rel}")
+            sub = (base / "SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("Bundled with Zobvia", sub, name)
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        for part in ("PART T", "PART U", "PART V", "PART W",
+                     "PART X", "PART Y"):
             self.assertIn(part, skill)

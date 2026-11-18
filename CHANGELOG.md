@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.11.0 — 2026-11-18
+
+### Added
+- **The specialist layer: the six remaining kajisho5 ecosystem skills (all MIT) that the BRAIN's registry knows — detection, dubbing, diarization, ingest, artifacts, imagemagick.**
+  - **DETECTION (Part T)** — kajisho5/detection-skill v0.2.3 (main @ 43cc556), 10 commands, 39 files. Doctor-verified: document tools (tracks, reframe, speakers, pii) ready; the vision engines (faces/text/objects/shots) are optional installs and report not-ready honestly — no detection run is claimed here.
+  - **DUBBING (Part U)** — kajisho5/dubbing-skill v0.2.1 (main @ d886971), 6 commands, 33 files. Doctor/engines verified: it drives local offline TTS engines (Chatterbox, Kokoro class), none bundled or installed here, so no synthesis is claimed; install an engine to enable narrate/dub/describe.
+  - **DIARIZATION (Part V)** — kajisho5/diarization-skill v0.3.2 (main @ 6fcb3bb), 6 commands, 25 files. Doctor-verified: assign/check ready; `diarize` needs pyannote.audio (not installed here).
+  - **INGEST (Part W)** — kajisho5/ingest-skill v0.1.0 (main @ 38f2c29), 4 commands, 16 files. Verified end-to-end: doctor ok, and an offload of a real clip completed with sha256 verification and a card manifest.
+  - **ARTIFACTS (Part X)** — kajisho5/artifacts-skill v0.4.0 (main @ ae039d3), 7 commands, 71 files. Verified: doctor runs; `inspect` produced a full structural report (hash, dimensions, format) for a real PNG.
+  - **IMAGEMAGICK (Part Y)** — kajisho5/imagemagick-skill v0.10.0 (main @ ab89bf9), 21 tools, 31 files. Doctor-verified only: the `magick` binary is not installed on the build machine (and could not be installed there), so no image operation is claimed — the tools report the missing binary honestly.
+- Capability index: 431 -> **485** named items (+10 detection, +6 dubbing, +6 diarization, +4 ingest, +7 artifacts, +21 imagemagick).
+
+
 ## 1.10.0 — 2026-11-18
 
 ### Added

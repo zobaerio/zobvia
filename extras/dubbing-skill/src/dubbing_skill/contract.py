@@ -1,0 +1,343 @@
+"""Machine-readable contract (`dubbing contract --json`, alias `skill --json`), in the shape the AI Video Production
+OS registry reads (skill_id, version, contract_version, provides, dependencies, not_provided)."""
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from . import PACKAGE_NAME, SKILL_ID, __version__
+from .doctor import DOCTOR_SCHEMA, IMPLEMENTED_OPS, OP_STEP, TRANSLATION
+from .engines import DEFAULT_ENGINE, engine_ids, engines_for, experimental_engines, get_engine
+from .engines.voicevox import DEFAULT_STYLE_ID as VOICEVOX_DEFAULT_STYLE, VERIFIED_CHARACTERS
+from .errors import ERROR_TABLE
+from .cues import MAX_LINE_CHARS, MAX_LINES
+from .ffmpeg_skill import FLAGS_USED, OPTIONAL_TOOLS, OPTIONAL_USE, SUPPORTED_CONTRACT_VERSION, TOOLS_USED
+from .consent import CONSENT_OPS, CONSENT_SCHEMA, RELATIONS
+from .describe import (DEFAULT_MIN_GAP, DEFAULT_SILENCE_THRESHOLD, DESCRIBE_SCHEMA, DESCRIBE_TEMPO, MIN_GAP_LIMIT,
+                       SILENCE_THRESHOLD_LIMIT)
+from .dub import ALIGN_TOLERANCE, DUB_SCHEMA, DUB_TEMPO, TEMPO_GAP
+from .mixing import DEFAULT_DUCK_DB, DEFAULT_VOICE_GAIN_DB, MAX_DUCK_DB, MAX_VOICE_GAIN_DB
+from .ops import NARRATE_SCHEMA
+from .disclosure import DISCLOSURE_SCHEMA, LINE_LANG, WATERMARK_SCHEMA, disclosure_line
+from .profile import LOUDNESS_RANGE, PITCH_RANGE, SPEED_RANGE, VOICE_PROFILE_SCHEMA
+from .pronunciation import METHODS as PRONUNCIATION_METHODS, PRONUNCIATION_SCHEMA, TERMS_SCHEMA
+from .provenance import ENGINE_FIELDS
+from .rate import DIGIT_MORAE, KANJI_MORAE, LATIN_MORAE, MORA_LANGS, RENDER_TEMPO
+from .timing import (DEFAULT_MAX_OVERRUN, DEFAULT_MAX_TEMPO, FIT_SCHEMA, MAX_OVERRUN_LIMIT, RENDER_GAP, TEMPO_LIMIT,
+                     UNFIT_POLICIES)
+
+CONTRACT_VERSION = "1.0"
+CAPABILITY_IDS = {"narrate": "speech.narrate", "dub": "speech.dub", "audio_description": "speech.audio_description"}
+# The cue list every op takes. Its text is already in the target language: this skill does not translate (ADR-003).
+CUES_INPUT = {
+    "format": "JSON list of cues, or an SRT / WebVTT file (subtitle-skill output)",
+    "cue": {"start": "seconds (float)", "end": "seconds (float)", "text": "the line to speak, already in `lang`",
+            "speaker": "optional speaker id (diarization-skill), mapped to a voice"},
+    "lang": "BCP-47 language of the text (ja, en, ...); must be one of the engine's languages",
+    "translation": "done by the caller before this skill is called; optionally described with --translation-note "
+                   "(engine, reviewer) so it is recorded in the provenance. No engine is chosen here",
+}
+# The pronunciation dictionary every op takes (pronunciation.py, roadmap step 12, ADR-015). None is built in.
+PRONUNCIATION_INPUT = {
+    "schema": PRONUNCIATION_SCHEMA,
+    "format": "JSON file {schema, name?, entries: [{term, lang, reading, accent?, ipa?, note?}]}",
+    "fields": {"term": "the written form, as it appears in the cues", "lang": "BCP-47; an entry for en serves en-US and en-GB",
+               "reading": "how to say it, in the language's own script (Japanese: katakana; English: a respelling)",
+               "accent": "optional accent nucleus in morae (0 = flat); engines with a user dictionary only (VOICEVOX)",
+               "ipa": "optional IPA phonemes; engines that take phonemes only (Kokoro, English)"},
+    "default": None,
+    "flag": "--pronunciation <dict.json> (narrate, dub, describe, terms)",
+    "matching": "longest term first, never overlapping; whole words, case-insensitive, in scripts written with spaces; "
+                "anywhere in CJK scripts",
+    "methods": {"user_dictionary": "added to the engine's own user dictionary for the run and removed after it; the "
+                                   "engine's reading of each line is recorded and each term checked against it",
+                "phoneme_hint": "given as inline phonemes ([term](/ipa/)) when the entry has ipa; else respelled",
+                "respell": "the term replaced by its reading in the text the engine reads"},
+    "method_values": list(PRONUNCIATION_METHODS),
+    "result": "pronunciation: dictionary, method, lines[{index, terms[{term, reading, how, confirmed}], read_as}], summary; "
+              "the cue text is never changed (its hash stays in the provenance; the spoken text's hash is added)",
+    "adr": "docs/decisions.md ADR-015",
+}
+# The voice profile every op takes (profile.py, roadmap step 13, ADR-016).
+VOICE_PROFILE_INPUT = {
+    "schema": VOICE_PROFILE_SCHEMA,
+    "format": "JSON file {schema, id, name?, engine, voice?, reference?, consent?, lang?, speed?, pitch?, loudness_target?, seed?}",
+    "fields": {"id": "a slug, the profile's name in every receipt", "engine": "the engine id", "voice": "the engine's voice",
+               "reference": "a reference voice, relative to the profile, only with `consent` (CONSENT_RECORD, ADR-009)",
+               "lang": "optional BCP-47 tag(s) the profile is for",
+               "speed": f"{SPEED_RANGE[0]:g} to {SPEED_RANGE[1]:g}, engines with a speed control",
+               "pitch": f"engine-native ({PITCH_RANGE[0]:g} to {PITCH_RANGE[1]:g}, VOICEVOX pitchScale), engines with a pitch control",
+               "loudness_target": f"LUFS ({LOUDNESS_RANGE[0]:g} to {LOUDNESS_RANGE[1]:g}): NARRATE's timeline through "
+                                  "ffmpeg-skill/loudness; recorded by DUB and AUDIO_DESCRIPTION (their level is the mix's)",
+               "seed": "the sampling seed"},
+    "flag": "--profile <profile.json> (narrate, dub, describe)",
+    "conflicts": "a flag that says otherwise (--engine, --voice, --reference, --consent, --seed) is INVALID_ARGUMENT",
+    "result": "voice_profile {id, name, sha256, engine, voice, reference_sha256, speed, pitch, loudness_target, seed}, in the "
+              "result and in every provenance",
+    "adr": "docs/decisions.md ADR-016",
+}
+# What a consent record must hold (consent.py, ADR-009). Every field is checked; any problem is CONSENT_REQUIRED.
+CONSENT_RECORD = {
+    "schema": CONSENT_SCHEMA,
+    "format": "JSON file",
+    "fields": {"voice_owner.name": "the person whose voice it is",
+               "consenter": {"name": "who consented", "relation": list(RELATIONS)},
+               "granted_at": "ISO 8601 date-time with a UTC offset; not in the future",
+               "expires_at": "optional; past it the record does not count",
+               "revoked": "optional; true never counts",
+               "scope": {"ops": f"the ops covered ({', '.join(CONSENT_OPS)})", "engines": "optional list",
+                         "languages": "optional list of output languages", "purpose": "free text"},
+               "evidence": "[{path (relative to the record), sha256}]: at least one file (signed form, recording of the "
+                           "consent); every file must exist and match",
+               "reference.sha256": "the SHA-256 of the reference clip the consent covers"},
+    "checked": "in the op before any engine work (the record first, then the clip's hash), and again in the worker",
+    "error": "CONSENT_REQUIRED (exit 2): details.reason is no_record | record_not_found | record_invalid | reference_mismatch, "
+             "details.problems lists every problem",
+    "bypass": None,
+    "adr": "docs/decisions.md ADR-009",
+}
+_OP_TOOLS = {
+    "narrate": {"description": "Narration from text or cues: one clip per line by a local engine (worker subprocess), laid on "
+                               "one mono timeline WAV through ffmpeg-skill (pad + join), validated through ffmpeg-skill/probe",
+                "inputs": ["cues (CUES_INPUT: .json, .srt, .vtt) or plain text (.txt, one utterance per line, back to back)",
+                           "the engine's built-in voice (voicevox: a style id, default 3), or a reference voice (--reference, "
+                           "chatterbox, qwen3_tts) with its owner's consent record (--consent, CONSENT_RECORD, ADR-009); "
+                           "qwen3_tts has no built-in voice"],
+                "argv": ["narrate", "<cues.json|cues.srt|cues.vtt|text.txt>", "--lang <ja>", "-o <out.wav>", "[--engine chatterbox|voicevox|kokoro|style_bert_vits2|qwen3_tts]",
+                         "[--voice <id>]", "[--reference <voice.wav> --consent <consent.json>]", "[--accept-unverified-voice-terms]", "[--profile <profile.json>]", "[--pronunciation <dict.json>]", "[--translation-note <json>]", "[--seed 0]",
+                         "[--on-overflow fail|shift]",
+                         "[--timeout 3600]", "[--overwrite]", "[--ffmpeg-skill <dir>]", "[--offline]", "--json"],
+                "refused": {"--reference without a consent record that checks out": "CONSENT_REQUIRED (ADR-009); no flag skips it",
+                            "timed cues": "FFMPEG_SKILL_UNAVAILABLE while ffmpeg-skill/pad cannot take audio-only input (ADR-005)",
+                            "a VOICEVOX character whose terms were not verified": "TERMS_UNVERIFIED unless "
+                                                                                  "--accept-unverified-voice-terms (ADR-006)"},
+                "schema": NARRATE_SCHEMA,
+                "limits": {"lines": MAX_LINES, "chars_per_line": MAX_LINE_CHARS, "duration_tolerance": "max(0.1 s, 1 %)"},
+                "output": "mono PCM WAV at the first clip's sample rate (Chatterbox: 24 kHz; VOICEVOX: the outputSamplingRate "
+                          "of its audio_query, 24 kHz by default); one clip per line, each placed at "
+                          "its cue start (cues) or back to back (text); the timeline lasts to the later of the last clip and the "
+                          "last cue end"},
+    "dub": {"description": "Dialogue replaced with translated speech (ADR-008): one clip per translated cue by a local engine, "
+                           "fitted to its source segment (timing fit, ADR-007, tempo 1.0), spoken over the programme's own "
+                           "audio lowered by --duck dB while the line is spoken, and put back into the video; every media "
+                           "step through ffmpeg-skill (audio, cut, join, probe)",
+            "inputs": ["the programme: a video (or an audio file with a .wav output)",
+                       "translated cues (CUES_INPUT), one per source segment at its times; translation is the caller's (ADR-003)",
+                       "optional source cues (--source-cues): checked to be the same segments, the source text hash recorded",
+                       "a voice per cue speaker (--speaker-voice SPEAKER=VOICE, else --voice), or a reference voice per "
+                       "speaker (--speaker-reference SPEAKER=PATH, else --reference) with its owner's consent record "
+                       "(--speaker-consent / --consent, CONSENT_RECORD, ADR-009)"],
+            "argv": ["dub", "<video|audio>", "<cues.json|cues.srt|cues.vtt>", "--lang <en>", "-o <out.mp4|out.mov|out.mkv|out.wav>",
+                     "[--source-cues <src.srt>]", "[--engine chatterbox|style_bert_vits2|qwen3_tts]", "[--voice <id>]", "[--speaker-voice <speaker>=<id>]...",
+                     "[--reference <voice.wav> --consent <consent.json>]", "[--speaker-reference <speaker>=<voice.wav>]...",
+                     "[--speaker-consent <speaker>=<consent.json>]...",
+                     "[--audio-stream 0]", f"[--max-overrun {DEFAULT_MAX_OVERRUN:g}]", "[--on-unfit fail|keep]",
+                     f"[--duck {DEFAULT_DUCK_DB:g}]", f"[--voice-gain {DEFAULT_VOICE_GAIN_DB:g}]", "[--profile <profile.json>]",
+                     "[--pronunciation <dict.json>]", "[--translation-note <json>]",
+                     "[--seed 0]", "[--timeout 3600]", "[--overwrite]", "[--ffmpeg-skill <dir>]", "[--offline]", "--json"],
+            "refused": {"a reference voice without a consent record that checks out": "CONSENT_REQUIRED (ADR-009); no flag skips it",
+                        "plain text": "INVALID_ARGUMENT: each line replaces the dialogue of its segment, so cues are needed",
+                        "a line longer than its room": "TIMING_OVERFLOW unless --on-unfit keep (the original dialogue stays there); "
+                                                       "either way each such line carries its length budget at tempo 1.0"},
+            "budgets": "fit.rate and fit.unfit[].budget (ADR-014): for each line that does not fit, the most characters "
+                       "(and morae for ja) that fit its room at tempo 1.0, measured on the voice's own rate; also in the "
+                       "TIMING_OVERFLOW details",
+            "schema": DUB_SCHEMA,
+            "limits": {"lines": MAX_LINES, "chars_per_line": MAX_LINE_CHARS, "tempo": DUB_TEMPO,
+                       "max_overrun": {"default": DEFAULT_MAX_OVERRUN, "range": [0.0, MAX_OVERRUN_LIMIT], "unit": "s",
+                                       "bounded_by": "the next cue's start and the programme's end"},
+                       "duck_db": {"default": DEFAULT_DUCK_DB, "range": [0.0, MAX_DUCK_DB]},
+                       "voice_gain_db": {"default": DEFAULT_VOICE_GAIN_DB, "range": [-MAX_VOICE_GAIN_DB, MAX_VOICE_GAIN_DB]},
+                       "alignment_tolerance": ALIGN_TOLERANCE, "duration_tolerance": "max(0.1 s, 1 %)"},
+            "render": {"tempo": TEMPO_GAP, "silence": "none is made: the time between lines is the programme's own sound"},
+            "output": "the programme with its audio replaced (video stream-copied), or the new programme audio as PCM WAV; "
+                      "as long as the programme, audio as long as the picture (max(0.1 s, 1 %))"},
+    "audio_description": {
+        "description": "Audio description (ADR-010): description cues spoken only inside the programme's gaps (the caller's, "
+                       "or its quiet stretches found by ffmpeg-skill/silence), each from its cue's start and ending by its cue's "
+                       "end and its gap's end, over the programme's own sound lowered by --duck dB; the renderer is DUB's",
+        "inputs": ["the programme: a video (or an audio file with a .wav output)",
+                   "description cues (CUES_INPUT), already in --lang",
+                   "the gaps: --gaps <gaps.json> ([{start, end}] or {gaps: [...]}) or --detect-gaps (ffmpeg-skill/silence)",
+                   "the engine's voice (voicevox: a style id), or a reference voice with its owner's consent record (ADR-009)"],
+        "argv": ["describe", "<video|audio>", "<descriptions.json|.srt|.vtt>", "--lang <ja>", "-o <out.mp4|out.mov|out.mkv|out.wav>",
+                 "--gaps <gaps.json> | --detect-gaps", f"[--min-gap {DEFAULT_MIN_GAP:g}]",
+                 f"[--silence-threshold {DEFAULT_SILENCE_THRESHOLD:g}]",
+                 "[--engine chatterbox|voicevox|kokoro|style_bert_vits2|qwen3_tts]",
+                 "[--voice <id>]", "[--accept-unverified-voice-terms]", "[--reference <voice.wav> --consent <consent.json>]",
+                 "[--audio-stream 0]", "[--on-unfit fail|skip]", f"[--duck {DEFAULT_DUCK_DB:g}]",
+                 f"[--voice-gain {DEFAULT_VOICE_GAIN_DB:g}]", "[--profile <profile.json>]", "[--pronunciation <dict.json>]", "[--seed 0]", "[--timeout 3600]",
+                 "[--overwrite]",
+                 "[--ffmpeg-skill <dir>]", "[--offline]", "--json"],
+        "refused": {"a description that starts outside every gap": "INVALID_ARGUMENT, before the engine runs",
+                    "a description longer than its window": "TIMING_OVERFLOW unless --on-unfit skip (left out, reported)",
+                    "--detect-gaps without ffmpeg-skill/silence on audio": "FFMPEG_SKILL_UNAVAILABLE (pass --gaps)",
+                    "a reference voice without a consent record that checks out": "CONSENT_REQUIRED (ADR-009)"},
+        "schema": DESCRIBE_SCHEMA,
+        "limits": {"lines": MAX_LINES, "chars_per_line": MAX_LINE_CHARS, "tempo": DESCRIBE_TEMPO,
+                   "min_gap": {"default": DEFAULT_MIN_GAP, "range": list(MIN_GAP_LIMIT), "unit": "s"},
+                   "silence_threshold": {"default": DEFAULT_SILENCE_THRESHOLD, "range": list(SILENCE_THRESHOLD_LIMIT), "unit": "dBFS"},
+                   "duck_db": {"default": DEFAULT_DUCK_DB, "range": [0.0, MAX_DUCK_DB]},
+                   "duration_tolerance": "max(0.1 s, 1 %)"},
+        "output": "the programme with its audio replaced (video stream-copied), or the new programme audio as PCM WAV; "
+                  "every placed description inside its gap; as long as the programme, audio as long as the picture"},
+}
+
+
+def tools() -> list:
+    out = []
+    for op, spec in _OP_TOOLS.items():
+        out.append({"tool_id": f"{SKILL_ID}/{op.replace('_', '-')}", "role": "transformation", "writes_media": True,
+                    "mutates_input": False, "deterministic": False, "implemented": IMPLEMENTED_OPS[op], "roadmap_step": OP_STEP[op],
+                    "engine": DEFAULT_ENGINE[op], "engines": engines_for(op), **spec})
+    out += [
+        {"tool_id": f"{SKILL_ID}/fit", "role": "analysis", "writes_media": False, "mutates_input": False, "deterministic": True,
+         "implemented": True, "roadmap_step": 4,
+         "description": "Timing fit (ADR-007): one clip per cue measured through ffmpeg-skill/probe against its cue window; "
+                        "per line fit (tempo 1.0, silence after), tempo (the smallest speed-up within --max-tempo) or unfit "
+                        "(reported with the reason, the tempo it would need and the seconds over; never cut, never placed); "
+                        "the silence before each placed line and after the last. Writes no media. With --rate (step 11, "
+                        "ADR-014): each line's length in --lang, the voice's speaking rate measured on the clips, and for "
+                        "each line that does not fit its length budget (characters, and morae for ja) at --max-tempo and "
+                        "at tempo 1.0, so the caller can ask the translator for a shorter line",
+         "inputs": ["cues (CUES_INPUT: .json, .srt, .vtt)", "one audio clip per cue, in cue order"],
+         "argv": ["fit", "<cues.json|cues.srt|cues.vtt>", "<clip>...", f"[--max-tempo {DEFAULT_MAX_TEMPO:g}]",
+                  f"[--max-overrun {DEFAULT_MAX_OVERRUN:g}]", "[--on-unfit fail|report]", "[--lang <ja>]", "[--rate]",
+                  "[--timeout 120]", "[--ffmpeg-skill <dir>]", "--json"],
+         "limits": {"max_tempo": {"default": DEFAULT_MAX_TEMPO, "range": [1.0, TEMPO_LIMIT]},
+                    "max_overrun": {"default": DEFAULT_MAX_OVERRUN, "range": [0.0, MAX_OVERRUN_LIMIT], "unit": "s",
+                                    "bounded_by": "the next cue's start"},
+                    "slow_down": False, "tempo_step": 0.001, "on_unfit": list(UNFIT_POLICIES)},
+         "statuses": {"fit": "spoken at tempo 1.0", "tempo": "sped up within --max-tempo",
+                      "unfit": "over_limit | empty_slot | empty_clip | not_measured: reported, TIMING_OVERFLOW unless --on-unfit report"},
+         "rate": {"flag": "--rate", "needs": "--lang", "roadmap_step": 11, "adr": "docs/decisions.md ADR-014",
+                  "units": {"chars": "spoken characters (no white space, punctuation or control characters)",
+                            "morae": f"for {list(MORA_LANGS)}: kana exact; kanji {KANJI_MORAE}, digits {DIGIT_MORAE}, "
+                                     f"Latin letters {LATIN_MORAE} each, estimated (morae_exact: false)"},
+                  "voice": "seconds = overhead + units x seconds_per_unit over the measured clips (linear), else "
+                           "units / seconds (proportional)",
+                  "budget": "floor((room x tempo - overhead) / max(voice, line) seconds_per_unit), always shorter than "
+                            "the line; at --max-tempo (budget) and at tempo 1.0 (budget_at_tempo_1)",
+                  "render_tempo": RENDER_TEMPO, "result": "rate, and unfit[].budget"},
+         "render": RENDER_GAP, "schema": FIT_SCHEMA},
+        {"tool_id": f"{SKILL_ID}/terms", "role": "analysis", "writes_media": False, "mutates_input": False, "deterministic": True,
+         "implemented": True, "roadmap_step": 12,
+         "description": "Which pronunciation dictionary terms each line of a script contains (ADR-015), with the dictionary's "
+                        "terms the script never uses and the dictionary as transcription-skill's --vocabulary; with "
+                        "--transcript, whether a transcription-skill Transcript of the output contains each term as "
+                        "written or as its reading (heard); no engine, "
+                        "no media",
+         "inputs": ["cues (CUES_INPUT) or plain text", "a pronunciation dictionary (PRONUNCIATION_INPUT)"],
+         "argv": ["terms", "<cues.json|cues.srt|cues.vtt|text.txt>", "--pronunciation <dict.json>", "--lang <ja>", "[--transcript <transcript.json>]", "--json"],
+         "schema": TERMS_SCHEMA},
+        {"tool_id": f"{SKILL_ID}/watermark", "role": "analysis", "writes_media": False, "mutates_input": False,
+         "deterministic": True, "implemented": True, "roadmap_step": 14,
+         "description": "An engine's watermark read back from any media file (ADR-017): the first audio stream extracted "
+                        "through ffmpeg-skill/audio, the engine's own detector run in the worker (Chatterbox: Perth). For "
+                        "a deliverable after mixing and encoding; each op already reads the mark back from every clip",
+         "argv": ["watermark", "<media>", "[--engine chatterbox]", "[--timeout 600]", "[--ffmpeg-skill <dir>]", "--json"],
+         "schema": WATERMARK_SCHEMA},
+        {"tool_id": f"{SKILL_ID}/doctor", "role": "diagnostic", "writes_media": False, "mutates_input": False, "deterministic": False,
+         "implemented": True, "description": "What is installed and missing (engines, ffmpeg-skill) and how to get it; never downloads",
+         "argv": ["doctor", "[--offline]", "[--ffmpeg-skill <dir>]", "--json"], "schema": DOCTOR_SCHEMA},
+        {"tool_id": f"{SKILL_ID}/engines", "role": "diagnostic", "writes_media": False, "mutates_input": False, "deterministic": False,
+         "implemented": True, "description": "Registered engines with status, version, licences, credit and watermark",
+         "argv": ["engines", "[--offline]", "--json"]},
+        {"tool_id": f"{SKILL_ID}/contract", "role": "metadata", "writes_media": False, "mutates_input": False, "deterministic": True,
+         "implemented": True, "description": "This contract", "argv": ["contract", "--json"]},
+    ]
+    return out
+
+
+def voice_terms() -> Dict[str, Any]:
+    """Which voices may be used by default (terms verified) and what happens to the others (ADR-006)."""
+    return {"voicevox": {
+        "verified": [{"character": v["character"], "speaker_uuid": uuid, "credit": v["credit"], "terms": v["terms"],
+                      "conditions": list(v["conditions"])} for uuid, v in VERIFIED_CHARACTERS.items()],
+        "default_voice": {"speaker": VOICEVOX_DEFAULT_STYLE, "character": "ずんだもん", "style": "ノーマル"},
+        "matched_by": "speaker_uuid and name from GET /speakers",
+        "unverified": "refused with TERMS_UNVERIFIED unless the caller passes --accept-unverified-voice-terms; the credit "
+                      "is then derived as 'VOICEVOX:<name>' and recorded with terms_verified: false",
+        "adr": "docs/decisions.md ADR-006"}}
+
+
+def contract() -> Dict[str, Any]:
+    deps = [
+        {"id": "ffmpeg-skill", "kind": "skill", "required": True, "for": [CAPABILITY_IDS[o] for o in CAPABILITY_IDS],
+         "version_range": "any release whose contract declares the tools and flags below (capability detection)",
+         "tools": list(TOOLS_USED), "flags": {t: list(f) for t, f in FLAGS_USED.items()},
+         "optional_tools": {t: {"flags": list(f), "audio_only": True, "for": OPTIONAL_USE[t]} for t, f in OPTIONAL_TOOLS.items()},
+         "contract_version": SUPPORTED_CONTRACT_VERSION,
+         "located_by": ["--ffmpeg-skill", "$DUBBING_FFMPEG_SKILL_DIR", "$VIDEO_AGENT_FFMPEG_SKILL_DIR",
+                        "~/.claude/skills/ffmpeg-skill", "./vendor/ffmpeg-skill", "../ffmpeg-skill"]},
+    ]
+    for eid in engine_ids():
+        s = get_engine(eid).spec
+        deps.append({"id": eid, "kind": "engine-" + s.kind, "required": False, "for": [CAPABILITY_IDS[o] for o in s.ops],
+                     "version_range": s.version_range, "license": s.code_license, "weights_license": s.weights_license,
+                     "credit_required": s.credit_required, "watermark": s.watermark, "install": s.install,
+                     "located_by": list(s.located_by), "downloaded_at_run_time": False, "experimental": s.experimental})
+    return {
+        "skill_id": SKILL_ID,
+        "id": SKILL_ID,
+        "skill": PACKAGE_NAME,
+        "version": __version__,
+        "contract_version": CONTRACT_VERSION,
+        "provides": [{"id": CAPABILITY_IDS[op], "lifecycle": "EXPERIMENTAL" if IMPLEMENTED_OPS[op] else "PROPOSED",
+                      "tool_id": f"{SKILL_ID}/{op.replace('_', '-')}"} for op in CAPABILITY_IDS],
+        "dependencies": deps,
+        "inputs": {"cues": CUES_INPUT, "pronunciation": PRONUNCIATION_INPUT, "voice_profile": VOICE_PROFILE_INPUT, "translation": dict(TRANSLATION, decided_in="subtitle-skill (MT engine ADR, open)")},
+        "not_provided": ["translation / machine translation of the script (caller input, ADR-003; subtitle-skill owns 字幕翻訳)",
+                         "transcription (transcription-skill)", "speaker diarization (diarization-skill)",
+                         "subtitle files and cue shaping (subtitle-skill)",
+                         "noise reduction, voice isolation of the source (voice-enhance-skill, audio-production-skill)",
+                         "music / BGM / sound effects (sound-design-skill)", "final mix and loudness targets of the programme (audio-production-skill)",
+                         "lip sync / video re-timing",
+                         "downloading engines or model weights (one-time manual step; doctor says how)",
+                         "network access beyond loopback (VOICEVOX / Style-Bert-VITS2 run on this machine)",
+                         "direct ffmpeg calls (every media step is an ffmpeg-skill tool)"],
+        "tools": tools(),
+        "engines": {"registered": {eid: get_engine(eid).spec.to_dict() for eid in engine_ids()},
+                    "default": dict(DEFAULT_ENGINE),
+                    "selection_adr": "docs/decisions.md ADR-001",
+                    "optional": True,
+                    "experimental": experimental_engines(),
+                    "experimental_policy": "never a default; every op that uses one adds a warning with its reason "
+                                           "(engines.registered.<id>.experimental_reason) and records engine.experimental in "
+                                           "the provenance; judge its quality by listening before relying on it (ADR-018)",
+                    "statuses": ["OK", "MISSING", "INCOMPATIBLE"]},
+        "policy": {"voice_cloning": "a reference voice (or a model trained on a real person's voice) is used only with a "
+                                    "consent record of that person that checks out (CONSENT_RECORD, ADR-009): the op verifies it "
+                                    "before any engine work, and the engine verifies it again in the worker; otherwise "
+                                    "CONSENT_REQUIRED. There is no flag, option or environment variable that skips the gate",
+                   "consent_record": CONSENT_RECORD,
+                   "credit": "an engine's credit (credit_required) is carried into the provenance and must appear in the "
+                             "published video's description or credits; VOICEVOX credits are resolved per voice "
+                             "('VOICEVOX:<character>', with the speaker and the character) into each clip's provenance "
+                             "`credits` and the op's `obligations`",
+                   "voice_terms": voice_terms(),
+                   "disclosure": {"schema": DISCLOSURE_SCHEMA, "every_output": True,
+                                  "result": "disclosure {synthetic_speech, what, engine, voices, voice_profile, cloned_voice, "
+                                            "consent, watermark, labels, line, line_lang, credits, publish}; obligations.disclosure",
+                                  "line_lang": LINE_LANG, "line_example": disclosure_line("narrate", False),
+                                  "line_example_cloned": disclosure_line("dub", True),
+                                  "labels": ["ai_generated_audio", "synthetic_voice", "cloned_real_voice", "watermarked"],
+                                  "publish": "append disclosure.publish.append to the description given to publish-skill "
+                                             "(plan / upload --description); map labels to a platform's own AI-content field",
+                                  "translation": "the line is English; another language is the caller's (subtitle-skill)",
+                                  "adr": "docs/decisions.md ADR-017"},
+                   "watermark": "an engine's watermark is never removed or bypassed; it is recorded in the provenance, and "
+                                "Chatterbox's Perth mark is read back from every clip (a clip where it is not found is refused)"},
+        "provenance": {"fields": ["skill", "op", *[f"engine.{f}" for f in ENGINE_FIELDS], "voice", "text.sha256", "translation",
+                                  "synthetic_speech", "watermark", "credits", "consent", "voice_profile", "output.sha256", "parameters", "ffmpeg_skill.version", "network"],
+                       "per_clip": True,
+                       "status": "OBSERVED"},
+        "execution": {"canonical_invocation": ["dubbing", "<command>", "...", "--json"], "network": False, "shell": False,
+                      "loopback_http": [eid for eid in engine_ids() if get_engine(eid).spec.kind == "local_http"],
+                      "engine_process": "worker subprocess in its own process group (under the engine's own interpreter "
+                                        "when configured), killed on --timeout; Hugging Face libraries forced offline",
+                      "media": "through ffmpeg-skill tools only", "input_is_read_only": True,
+                      "overwrites": "never unless --overwrite; an output equal to an input is refused",
+                      "offline_flag": "accepted everywhere; every registered engine works with no network (loopback only)"},
+        "errors": {code: {"exit_code": ex, "retryable": rt} for code, (ex, rt) in ERROR_TABLE.items()},
+        "error_shape": {"ok": False, "error": {"code": "<ERRORS key>", "message": "str", "retryable": "bool", "details": "object"}},
+    }

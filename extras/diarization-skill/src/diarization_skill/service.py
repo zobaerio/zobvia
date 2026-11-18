@@ -1,0 +1,229 @@
+"""DIARIZE: media file -> speaker turns document (`diarization-skill/turns@1`).
+
+probe + fingerprint -> fixed extraction to mono 16 kHz WAV (private temp dir) -> engine in a worker
+subprocess with a timeout that kills its whole process group -> labels, overlap, provenance -> validated
+document. An engine object passed in (the test suite's fake) runs in a thread with the same timeout.
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from typing import Any, Dict, List, Optional, Tuple
+
+from . import __version__
+from .engines import DEFAULT_ENGINE, get_engine
+from .engines.base import DiarizationEngine, EngineRequest, EngineResult
+from .chunks import LINK_THRESHOLD, MIN_CHUNK_SECONDS, run_chunks
+from .engines.worker import OFFLINE_ENV
+from .errors import DiarizationError
+from .media import AUDIO_RECIPE, child_env, extract_audio, fingerprint_file, probe
+from .pipeline import inspect, resolve_dir
+from .turns import build_turns, validate_turns
+
+WORKER_MODULE = "diarization_skill.engines.worker"
+DEFAULT_TIMEOUT = 3600.0
+DEVICES = ("cpu", "cuda", "mps")
+
+
+def check_speaker_counts(num_speakers: Optional[int], min_speakers: Optional[int], max_speakers: Optional[int]) -> None:
+    for name, v in (("--num-speakers", num_speakers), ("--min-speakers", min_speakers), ("--max-speakers", max_speakers)):
+        if v is not None and (not isinstance(v, int) or isinstance(v, bool) or v < 1):
+            raise DiarizationError("INVALID_ARGUMENT", f"{name} must be an integer >= 1")
+    if num_speakers is not None and (min_speakers is not None or max_speakers is not None):
+        raise DiarizationError("INVALID_ARGUMENT", "--num-speakers excludes --min-speakers / --max-speakers")
+    if min_speakers is not None and max_speakers is not None and min_speakers > max_speakers:
+        raise DiarizationError("INVALID_ARGUMENT", "--min-speakers must be <= --max-speakers")
+
+
+def diarize(media: str, *, num_speakers: Optional[int] = None, min_speakers: Optional[int] = None,
+            max_speakers: Optional[int] = None, audio_stream: int = 0, timeout: float = DEFAULT_TIMEOUT,
+            pipeline_dir: Optional[str] = None, device: str = "cpu", engine: Optional[DiarizationEngine] = None,
+            engine_id: str = DEFAULT_ENGINE, embeddings: bool = False, chunk_seconds: Optional[float] = None,
+            link_threshold: float = LINK_THRESHOLD, work_dir: Optional[str] = None) -> Dict[str, Any]:
+    """`embeddings=True` keeps one speaker embedding per anonymous id under `speaker_embeddings` (ADR-002);
+    by default no voice vector is written. `chunk_seconds` diarizes a long recording in chunks and links
+    speakers across them by their embeddings, resumable through `work_dir` (ADR-003); the timeout is per chunk."""
+    t0 = time.time()
+    check_speaker_counts(num_speakers, min_speakers, max_speakers)
+    if device not in DEVICES:
+        raise DiarizationError("INVALID_ARGUMENT", f"--device must be one of {DEVICES}")
+    if not isinstance(audio_stream, int) or audio_stream < 0:
+        raise DiarizationError("INVALID_ARGUMENT", "--audio-stream must be an integer >= 0")
+    if timeout <= 0:
+        raise DiarizationError("INVALID_ARGUMENT", "--timeout must be > 0")
+    if not os.path.isfile(media):
+        raise DiarizationError("INPUT_NOT_FOUND", f"media not found: {os.path.basename(media)}")
+    if chunk_seconds is None and work_dir is not None:
+        raise DiarizationError("INVALID_ARGUMENT", "--work-dir needs --chunk-seconds")
+    if chunk_seconds is not None and (chunk_seconds < MIN_CHUNK_SECONDS or not -1 <= link_threshold <= 1):
+        raise DiarizationError("INVALID_ARGUMENT", f"--chunk-seconds must be >= {MIN_CHUNK_SECONDS:g} and --link-threshold in [-1, 1]")
+    eng = engine if engine is not None else get_engine(engine_id)
+    warnings: List[str] = []
+    revision: Optional[str] = None
+    pdir = resolve_dir(pipeline_dir)
+    if eng.needs_pipeline_dir:
+        info = inspect(pdir)
+        if info["status"] != "OK":
+            raise DiarizationError("PIPELINE_NOT_FOUND", f"pipeline directory not ready: {info['detail']}",
+                                   "run `diarization doctor` for the one-time setup steps")
+        revision = info["revision"]
+        if revision is None:
+            warnings.append("pipeline snapshot revision unknown (directory is neither a git clone nor a hub snapshot)")
+    info_media = probe(media)
+    if audio_stream >= info_media["audio_stream_count"]:
+        raise DiarizationError("INVALID_ARGUMENT", f"--audio-stream {audio_stream} out of range "
+                               f"({info_media['audio_stream_count']} audio stream(s))")
+    fingerprint = fingerprint_file(media)
+    duration = float(info_media["duration"])
+    chunked: Optional[Dict[str, Any]] = None
+    run_dir = tempfile.mkdtemp(prefix="diarization-")
+    try:
+        if chunk_seconds is None:
+            wav = os.path.join(run_dir, "audio.wav")
+            extraction = extract_audio(media, wav, audio_stream=audio_stream, timeout=max(60.0, timeout))
+            ereq = EngineRequest(audio_path=wav, pipeline_dir=pdir if eng.needs_pipeline_dir else None, num_speakers=num_speakers,
+                                 min_speakers=min_speakers, max_speakers=max_speakers, device=device)
+            t_engine = time.time()
+            result = run_engine(eng, ereq, timeout, run_dir, injected=engine is not None)
+            extraction["engine_seconds"] = round(time.time() - t_engine, 3)
+        else:
+            base = EngineRequest(audio_path="", pipeline_dir=pdir if eng.needs_pipeline_dir else None, num_speakers=num_speakers,
+                                 min_speakers=min_speakers, max_speakers=max_speakers, device=device)
+            key_fields = {"fingerprint": fingerprint, "audio_stream": audio_stream, "engine": eng.id, "model": eng.model,
+                          "revision": revision, "chunk_seconds": chunk_seconds}
+            t_engine = time.time()
+            chunked = run_chunks(
+                media=media, duration=duration, chunk_seconds=chunk_seconds, link_threshold=link_threshold, work_dir=work_dir,
+                run_dir=run_dir, key_fields=key_fields, base=base, engine=eng,
+                extract=lambda wav, start, length: extract_audio(media, wav, audio_stream=audio_stream, timeout=max(60.0, timeout),
+                                                                 start=start, length=length),
+                run=lambda req: run_engine(eng, req, timeout, run_dir, injected=engine is not None))
+            result = EngineResult(exclusive=chunked["exclusive"], regular=chunked["regular"], engine_version=chunked["engine_version"],
+                                  model=chunked["model"], extra=chunked["extra"], embeddings=chunked["embeddings"])
+            extraction = dict(chunked["extraction"] or {"tool": "ffmpeg", "recipe": dict(AUDIO_RECIPE), "audio_stream_index": audio_stream,
+                                                        "stream": f"0:a:{audio_stream}"},
+                              chunked=True, window="-ss start -t length before -i, one extraction per chunk",
+                              engine_seconds=round(time.time() - t_engine, 3))
+            warnings.extend(chunked["warnings"])
+    finally:
+        shutil.rmtree(run_dir, ignore_errors=True)
+
+    label_map: Dict[str, str] = {}
+    doc = build_turns(
+        exclusive=result.exclusive, regular=result.regular, duration=duration,
+        source={"filename": os.path.basename(media), "fingerprint": fingerprint, "size_bytes": os.path.getsize(media),
+                "media_duration": duration, "has_video": bool(info_media["has_video"]), "audio_stream": audio_stream},
+        engine={"id": eng.id, "version": result.engine_version, "model": result.model or eng.model, "revision": revision,
+                "license": eng.license, "attribution": eng.attribution, "execution_mode": eng.execution_mode,
+                "device": device, **{k: v for k, v in result.extra.items() if k == "torch_version"}},
+        parameters={"num_speakers": num_speakers, "min_speakers": min_speakers, "max_speakers": max_speakers},
+        audio_extraction=extraction, skill_version=__version__, processing_seconds=time.time() - t0, warnings=warnings,
+        embeddings=result.embeddings, keep_embeddings=embeddings, label_map=label_map)
+    if chunked is not None:
+        doc["chunking"] = chunking_block(chunked, label_map, chunk_seconds, link_threshold, work_dir is not None)
+        if num_speakers is not None and doc["speaker_count"] > num_speakers:
+            doc["warnings"].append(f"{doc['speaker_count']} speakers after linking chunks, more than --num-speakers {num_speakers}: "
+                                   "some voices were not linked (see chunking.links)")
+    rep = validate_turns(doc, expected_fingerprint=fingerprint)
+    if not rep.ok:
+        raise DiarizationError("INVALID_RESULT", "engine output failed turns validation; nothing returned", rep.errors[:10])
+    return doc
+
+
+def chunking_block(chunked: Dict[str, Any], label_map: Dict[str, str], chunk_seconds: float, link_threshold: float,
+                   resumable: bool) -> Dict[str, Any]:
+    links = [{"chunk": ln["chunk"], "chunk_speaker": ln["local"], "speaker": label_map.get(ln["global"]), "linked": ln["linked"],
+              "similarity": ln["similarity"], "margin": ln["margin"]} for ln in chunked["links"]]
+    linked = [ln["similarity"] for ln in links if ln["linked"]]
+    return {"chunk_seconds": chunk_seconds, "link_threshold": link_threshold,
+            "method": "cosine similarity to each speaker's speech-weighted centroid, greedy one-to-one per chunk",
+            "chunk_parameters": chunked["plan_parameters"], "resumable": resumable, "chunks": chunked["chunks"], "links": links,
+            "min_link_similarity": min(linked) if linked else None,
+            "resumed_chunks": sum(1 for c in chunked["chunks"] if c["resumed"])}
+
+
+def run_engine(engine: DiarizationEngine, ereq: EngineRequest, timeout: float, run_dir: str, injected: bool = False) -> EngineResult:
+    if injected:
+        return _run_in_thread(engine, ereq, timeout)
+    req_path = os.path.join(run_dir, "engine_request.json")
+    out_path = os.path.join(run_dir, "engine_result.json")
+    if os.path.exists(out_path):  # a chunked run reuses run_dir: never read the previous chunk's result
+        os.remove(out_path)
+    with open(req_path, "w", encoding="utf-8") as fh:
+        json.dump({"engine_id": engine.id, "request": ereq.to_dict()}, fh, ensure_ascii=False)
+    code, err = run_process_group([sys.executable, "-m", WORKER_MODULE, req_path, out_path], timeout)
+    if code == 124:
+        raise DiarizationError("ENGINE_TIMEOUT", f"engine exceeded the timeout ({timeout:g}s) and was stopped", {"timeout": timeout})
+    if not os.path.exists(out_path):
+        tail = "\n".join(err.strip().splitlines()[-5:])
+        raise DiarizationError("ENGINE_FAILED", f"engine worker exited {code} without a result", tail)
+    with open(out_path, encoding="utf-8") as fh:
+        payload = json.load(fh)
+    if not payload.get("ok"):
+        e = payload.get("error") or {}
+        raise DiarizationError(e.get("code", "ENGINE_FAILED"), e.get("message", "engine failed"), e.get("detail"))
+    return EngineResult.from_dict(payload["result"])
+
+
+def worker_env() -> Dict[str, str]:
+    return dict(child_env(), PYTHONPATH=os.pathsep.join(p for p in sys.path if p), **OFFLINE_ENV)
+
+
+def run_process_group(argv: List[str], timeout: float) -> Tuple[int, str]:
+    """Run argv in its own process group; kill the whole group on timeout (returns exit 124)."""
+    kw: Dict[str, Any] = {"stdout": subprocess.DEVNULL, "stderr": subprocess.PIPE, "env": worker_env()}
+    if os.name == "nt":
+        kw["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    else:
+        kw["start_new_session"] = True
+    proc = subprocess.Popen(argv, **kw)
+    try:
+        _, err = proc.communicate(timeout=timeout)
+        return proc.returncode, (err or b"").decode("utf-8", errors="replace")
+    except subprocess.TimeoutExpired:
+        _kill_tree(proc)
+        proc.communicate()
+        return 124, ""
+
+
+def _kill_tree(proc: "subprocess.Popen[bytes]") -> None:
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+
+
+def _run_in_thread(engine: DiarizationEngine, ereq: EngineRequest, timeout: float) -> EngineResult:
+    box: Dict[str, Any] = {}
+
+    def target() -> None:
+        try:
+            box["result"] = engine.diarize(ereq)
+        except BaseException as exc:  # noqa: BLE001 - re-raised in the caller's thread
+            box["error"] = exc
+
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        raise DiarizationError("ENGINE_TIMEOUT", f"engine exceeded the timeout ({timeout:g}s)", {"timeout": timeout})
+    if "error" in box:
+        err = box["error"]
+        if isinstance(err, DiarizationError):
+            raise err
+        raise DiarizationError("ENGINE_FAILED", f"{type(err).__name__}: {err}")
+    return box["result"]
