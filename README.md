@@ -18,9 +18,9 @@
 `DOCUMENTARY` — give a documentary title or topic, get a complete **10-minute VOX-style documentary production package** (research, script, 8-second scene map, text-to-video prompts, audio package, YouTube SEO, thumbnails, checklist) in 10 approval-gated stages.
 `3D EXPLAINER` — a bundled Three.js sub-skill (`extras/zach-d-films/`) that makes **9:16 cartoon "what if" explainer shorts** with procedural people, props, slow-motion impacts and voice-timed captions.
 `EDIT` — a bundled FFmpeg sub-skill (`extras/ffmpeg-skill/`, kajisho5/ffmpeg-skill, MIT) with **42 tools for editing real footage**: cut/join, silence removal, reframe, captions, loudness, platform exports (Reels/TikTok/Shorts/YouTube…) and delivery checks — local only, no cloud.
-**Plus four more bundled sub-skills** (kajisho5 ecosystem, MIT): `BLENDER` — 14 headless-Blender tools for 3D assets (inspect/convert/optimise/bake/render, `extras/blender-skill/`); `AUDIO PRODUCTION` — 18 typed audio operations as validated graphs (gain/mix/stems/loudness versions, `extras/audio-production-skill/`); `COLOR GRADING` — 8 typed colour treatments (HDR→SDR, LUTs, primary correction, legalize, `extras/color-grading-skill/`); `HYPERFRAMES` — 7 tools rendering HTML scenes (title cards, slates, stingers) to video (`extras/hyperframes-skill/`). `BRAIN` — the video-production-agent: plans and orchestrates whole productions across all the skills above, with approval gates and provenance (24 CLI commands, `extras/video-production-agent/`); `REMOTION` — motion graphics over real footage: 9 compositions (animated captions, jump cuts, karaoke, highlights…) driven by ffmpeg-skill measurements (`extras/remotion-ffmpeg-skill/`); `THUMBNAIL` — renders decided thumbnails (frame + text + layout) to PNG/JPEG with variants and layers (9 tools, `extras/thumbnail-skill/`).
+**Plus four more bundled sub-skills** (kajisho5 ecosystem, MIT): `BLENDER` — 14 headless-Blender tools for 3D assets (inspect/convert/optimise/bake/render, `extras/blender-skill/`); `AUDIO PRODUCTION` — 18 typed audio operations as validated graphs (gain/mix/stems/loudness versions, `extras/audio-production-skill/`); `COLOR GRADING` — 8 typed colour treatments (HDR→SDR, LUTs, primary correction, legalize, `extras/color-grading-skill/`); `HYPERFRAMES` — 7 tools rendering HTML scenes (title cards, slates, stingers) to video (`extras/hyperframes-skill/`). `BRAIN` — the video-production-agent: plans and orchestrates whole productions across all the skills above, with approval gates and provenance (24 CLI commands, `extras/video-production-agent/`); `REMOTION` — motion graphics over real footage: 9 compositions (animated captions, jump cuts, karaoke, highlights…) driven by ffmpeg-skill measurements (`extras/remotion-ffmpeg-skill/`); `THUMBNAIL` — renders decided thumbnails (frame + text + layout) to PNG/JPEG with variants and layers (9 tools, `extras/thumbnail-skill/`). Plus the analysis/QC layer: `MEDIA ANALYSIS` — 14 measurement tools (scenes, loudness, style, highlights; `extras/media-analysis-skill/`); `QC` — 72 delivery checks (3 tools, `extras/qc-skill/`); `SUBTITLE` — generate/translate/burn/mux from decided cues (4 tools, `extras/subtitle-skill/`); `TRANSCRIPTION` — speech recognition with word timing (7 tools, `extras/transcription-skill/`); `VIDEO EDITING` — typed edit-graph executor, 15 operation types (`extras/video-editing-skill/`); `MOTION GRAPHICS` — deterministic titles/lower-thirds/overlays, 15 element types (`extras/motion-graphics-skill/`).
 
-[Quick start](#-quick-start) · [Full video guide](#-how-to-make-a-video--the-complete-guide) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-373-named-items) · [Examples](examples/)
+[Quick start](#-quick-start) · [Full video guide](#-how-to-make-a-video--the-complete-guide) · [LEARN mode](#-learn-mode) · [CREATE mode](#-create-mode) · [Capability index](#-capability-index-431-named-items) · [Examples](examples/)
 
 ![Zobvia — how it works](assets/demo.svg)
 
@@ -332,7 +332,7 @@ Most tools break Bengali. zobvia doesn't:
 - Latin tool names (*ChatGPT, Midjourney*) sized +4–6% inside Bengali lines
 - Full rules in [`references/bengali-text-rules.md`](references/bengali-text-rules.md), RTL + Devanagari in [`references/multilingual-typography.md`](references/multilingual-typography.md)
 
-## 📚 Capability index (373 named items)
+## 📚 Capability index (431 named items)
 
 | Library | Count | File |
 |---|---:|---|
@@ -363,6 +363,12 @@ Most tools break Bengali. zobvia doesn't:
 | Video-production-agent commands (doctor, skills, analyze, plan, validate, render, approve, deliver, publish…) | 24 | `extras/video-production-agent/src/` |
 | Remotion-on-footage compositions + tools (Captioned, Jumpcut, PeakPulse, Titled, Highlights, BeatMontage, Karaoke, Pip, Emphasis + 7 scripts) | 16 | `extras/remotion-ffmpeg-skill/` |
 | Thumbnail tools (validate, render, extract frame, batch, variants, layers, choose frame, place text, background) | 9 | `extras/thumbnail-skill/src/` |
+| Media-analysis tools (probe, streams, scenes, silence, loudness, style, highlights, integrity…) | 14 | `extras/media-analysis-skill/src/` |
+| QC tools (run, check, inspect — 72 delivery checks in the contract) | 3 | `extras/qc-skill/src/` |
+| Subtitle tools (generate, render, translate, mux) | 4 | `extras/subtitle-skill/src/` |
+| Transcription tools (transcribe, segments, export, speakers, find, check, batch) | 7 | `extras/transcription-skill/src/` |
+| Video-editing operation types (TRIM, CUT, CONCAT, CONDENSE, CROP, FILL, FIT, FREEZE, OVERLAY, SPEED…) | 15 | `extras/video-editing-skill/src/` |
+| Motion-graphics element types (title, lower third, overlays, countdown, progress, meme, sticker…) | 15 | `extras/motion-graphics-skill/src/` |
 
 Plus: 28 reference files total, 11 working scripts, a compilable Remotion starter
 ([`templates/remotion-starter/`](templates/remotion-starter/)), voiceover workflow,

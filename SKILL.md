@@ -15,7 +15,11 @@ headless-Blender 3D asset toolkit (Part G), a typed audio-production
 engine (Part H), a colour-grading engine (Part I), an HTML-scene
 video renderer (Part J), a production BRAIN that plans and
 orchestrates the others (Part K), a Remotion-on-footage bridge
-(Part L) and a thumbnail renderer (Part M).
+(Part L), a thumbnail renderer (Part M), a media-analysis
+engine (Part N), a QC checker (Part O), a subtitle engine
+(Part P), a transcription engine (Part Q), a typed video-editing
+graph executor (Part R) and a deterministic motion-graphics
+renderer (Part S).
 
 ## Philosophy
 
@@ -67,6 +71,12 @@ first LEARN or CREATE run on a machine:
 | A whole video/recording to plan, produce and deliver end-to-end | BRAIN (Part K) |
 | Motion graphics / animated captions / jump cuts ON a real recording (Remotion) | REMOTION (Part L) |
 | A thumbnail to render (decided frame + text + layout) | THUMBNAIL (Part M) |
+| Deep measurement of a media file (scenes, loudness, style, highlights) | MEDIA ANALYSIS (Part N) |
+| A delivery QC check (broadcast/platform compliance) | QC (Part O) |
+| Subtitle files to generate / translate / burn / mux from decided cues | SUBTITLE (Part P) |
+| Speech to transcribe (recognition only) | TRANSCRIPTION (Part Q) |
+| A typed edit graph to execute (trim/cut/concat/speed/overlay ops) | VIDEO EDITING (Part R) |
+| Deterministic titles / lower thirds / overlays on a video | MOTION GRAPHICS (Part S) |
 | Neither, or genuinely unclear | Ask one question: learn or create? |
 
 Auto-selection rules:
@@ -639,6 +649,95 @@ frame is an asset. Needs Pillow. It never chooses the frame, text or
 design itself — that decision is yours or the user's. Upstream:
 kajisho5/thumbnail-skill, MIT.
 
+## PART N — MEDIA ANALYSIS (bundled media-analysis-skill)
+
+For deep, honest measurement of a media file — probe, streams,
+scenes, silence, loudness, noise, timing, edit style, highlight
+signals, integrity — use the bundled media-analysis-skill at
+`extras/media-analysis-skill/`: read its `SKILL.md`. 14 tools via
+`PYTHONPATH=extras/media-analysis-skill/src python3 -m
+media_analysis.cli analyze <file> --kind <kind>` (kinds include
+loudness, scene_detection, edit_style, highlight_signals). It
+reports observations, never judgements. Two analyzers (vad,
+audio_events) need ONNX model files that are NOT in this bundle
+(text-only channel) — copy `yamnet_patches.onnx` and
+`silero_vad_16k_op15.onnx` from the upstream repo into
+`src/media_analysis/models/` to enable them; everything else works
+without them. Upstream: kajisho5/media-analysis-skill, MIT.
+
+## PART O — QC (bundled qc-skill)
+
+For a delivery quality check — container/codec conformance,
+loudness, black/freeze frames, flash safety, delivery-package
+rules (72 checks) — use the bundled qc-skill at `extras/qc-skill/`:
+read its `SKILL.md`. Run documents like `{"operation": "check",
+"kind": "video", "input": "<file>"}` via `PYTHONPATH=
+extras/qc-skill/src python3 -m qc_skill.cli run - --json
+--workspace <dir>`. QC reports PASS/FAIL per check with evidence;
+it never fixes anything — fixing is EDIT's job, re-check after.
+Upstream: kajisho5/qc-skill, MIT.
+
+## PART P — SUBTITLE (bundled subtitle-skill)
+
+For subtitle work from DECIDED cues — validate a timeline,
+generate SRT/WebVTT/TTML, translate cues (timecodes kept, target
+reading speed re-checked), burn in or mux soft tracks — use the
+bundled subtitle-skill at `extras/subtitle-skill/`: read its
+`SKILL.md`. 4 tools (generate, render, translate, mux) via
+`PYTHONPATH=extras/subtitle-skill/src python3 -m
+subtitle_skill.cli run - --json` with `SUBTITLE_SKILL_FFMPEG_SKILL_DIR=
+extras/ffmpeg-skill`; requests carry an absolute `workspace` and an
+`output_path`. It does no transcription and no cue-splitting
+judgement — cues are decided by you, CREATE or TRANSCRIPTION.
+Upstream: kajisho5/subtitle-skill, MIT.
+
+## PART Q — TRANSCRIPTION (bundled transcription-skill)
+
+For speech recognition — audio/video to a timed transcript with
+segments, speakers, find and export — use the bundled
+transcription-skill at `extras/transcription-skill/`: read its
+`SKILL.md`. 7 tools; the CLI runs as `PYTHONPATH=
+extras/transcription-skill/src python3 -m transcription_skill.cli
+transcribe <file> --language <code> --model <size>`. An ASR engine
+must be installed for the python that runs it (faster-whisper is
+the usual one: `pip install faster-whisper`); its `doctor` reports
+engines honestly. Recognition only: it never invents speech, and a
+completed run is not proof the words are right — spot-check the
+transcript against the audio before building on it, especially
+for Bengali and synthetic voices. Upstream:
+kajisho5/transcription-skill, MIT.
+
+## PART R — VIDEO EDITING (bundled video-editing-skill)
+
+For executing a DECIDED edit as a typed graph — 15 operation
+types (TRIM, CUT, CONCAT, CONDENSE, CROP, FILL, FIT, FREEZE,
+IMAGE_INSERT, OVERLAY, PUNCH_IN, RESIZE, REVERSE, ROTATE, SPEED) —
+use the bundled video-editing-skill at
+`extras/video-editing-skill/`: read its `SKILL.md`. Requests are
+`video-editing/request@1` documents (sources, operations, outputs)
+via `PYTHONPATH=extras/video-editing-skill/src python3 -m
+video_editing_skill.cli run - --json --workspace <dir>` with
+`VIDEO_EDITING_FFMPEG_SKILL_DIR=extras/ffmpeg-skill`. This is the
+executor the BRAIN's propose/render steps call; EDIT (Part F)
+remains the direct toolset for ad-hoc edits. Upstream:
+kajisho5/video-editing-skill, MIT.
+
+## PART S — MOTION GRAPHICS (bundled motion-graphics-skill)
+
+For deterministic graphics rendered onto a video through
+ffmpeg-skill — titles, lower thirds, text/image/video overlays,
+chapters, countdowns, progress bars, hooks, memes, stickers,
+corner bugs (15 element types) — use the bundled
+motion-graphics-skill at `extras/motion-graphics-skill/`: read its
+`SKILL.md`. One tool (`motion-graphics/run`) taking a
+`motion-graphics/request@1` document (video, output, elements) via
+`PYTHONPATH=extras/motion-graphics-skill/src python3 -m
+motion_graphics.cli run - --json` with
+`MOTION_GRAPHICS_FFMPEG_SKILL_DIR=extras/ffmpeg-skill`. Pick by
+engine: MOTION GRAPHICS for fast deterministic overlays, REMOTION
+(Part L) for rich React animation, HYPERFRAMES (Part J) for HTML
+scenes. Upstream: kajisho5/motion-graphics-skill, MIT.
+
 ## Hard Rules
 
 1. Measurable numbers over adjectives — in analysis, plans, and reports.
@@ -720,3 +819,9 @@ up front.
 | `extras/video-production-agent/SKILL.md` | BRAIN sub-skill (Part K) — production planning/orchestration; read before any end-to-end production job |
 | `extras/remotion-ffmpeg-skill/SKILL.md` | REMOTION sub-skill (Part L) — motion graphics on real footage; read before any Remotion-on-footage job |
 | `extras/thumbnail-skill/SKILL.md` | THUMBNAIL sub-skill (Part M) — decided-thumbnail rendering; read before any thumbnail render job |
+| `extras/media-analysis-skill/SKILL.md` | MEDIA ANALYSIS sub-skill (Part N) — deep media measurement; read before any analysis job |
+| `extras/qc-skill/SKILL.md` | QC sub-skill (Part O) — delivery quality checks; read before any QC job |
+| `extras/subtitle-skill/SKILL.md` | SUBTITLE sub-skill (Part P) — subtitle generate/translate/render/mux; read before any subtitle job |
+| `extras/transcription-skill/SKILL.md` | TRANSCRIPTION sub-skill (Part Q) — speech recognition; read before any transcription job |
+| `extras/video-editing-skill/SKILL.md` | VIDEO EDITING sub-skill (Part R) — typed edit-graph execution; read before any graph edit job |
+| `extras/motion-graphics-skill/SKILL.md` | MOTION GRAPHICS sub-skill (Part S) — deterministic titles/overlays; read before any motion-graphics job |

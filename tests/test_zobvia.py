@@ -14,7 +14,9 @@ sounded, multi-colour + interactivity layer in the starter source),
 v1.6 (DOCUMENTARY mode bundle, 3D explainer sub-skill bundle),
 v1.7 (EDIT mode: bundled ffmpeg-skill toolset),
 v1.8 (BLENDER, AUDIO PRODUCTION, COLOR GRADING, HYPERFRAMES bundles),
-v1.9 (BRAIN, REMOTION, THUMBNAIL bundles).
+v1.9 (BRAIN, REMOTION, THUMBNAIL bundles),
+v1.10 (MEDIA ANALYSIS, QC, SUBTITLE, TRANSCRIPTION, VIDEO EDITING,
+MOTION GRAPHICS bundles).
 """
 import json
 import subprocess
@@ -873,4 +875,34 @@ class BundledAdditionsV16(unittest.TestCase):
             self.assertIn("Bundled with Zobvia", sub, name)
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         for part in ("PART K", "PART L", "PART M"):
+            self.assertIn(part, skill)
+
+
+    def test_tier1_completion_bundles(self):
+        bundles = {
+            "media-analysis-skill": (
+                "src/media_analysis/cli.py", "tools"),
+            "qc-skill": ("src/qc_skill/cli.py",),
+            "subtitle-skill": ("src/subtitle_skill/cli.py",),
+            "transcription-skill": (
+                "src/transcription_skill/cli.py", "schemas"),
+            "video-editing-skill": (
+                "src/video_editing_skill/cli.py", "examples"),
+            "motion-graphics-skill": ("src/motion_graphics/cli.py",),
+        }
+        for name, keys in bundles.items():
+            base = ROOT / "extras" / name
+            self.assertTrue((base / "SKILL.md").is_file(), name)
+            self.assertTrue((base / "LICENSE").is_file(), name)
+            for rel in keys:
+                self.assertTrue((base / rel).exists(), f"{name}/{rel}")
+            sub = (base / "SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("Bundled with Zobvia", sub, name)
+        # The ONNX models are knowingly excluded (binary, text-only
+        # channel) — the bundle note must say so.
+        ma = (ROOT / "extras" / "media-analysis-skill" / "SKILL.md")
+        self.assertIn("ONNX", ma.read_text(encoding="utf-8"))
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        for part in ("PART N", "PART O", "PART P", "PART Q",
+                     "PART R", "PART S"):
             self.assertIn(part, skill)

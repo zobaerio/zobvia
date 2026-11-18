@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.10.0 — 2026-11-18
+
+### Added
+- **Tier 1 complete: the remaining six kajisho5 ecosystem skills (all MIT), so the BRAIN (Part K) now has its full measurement/QC/subtitle/transcription/editing/graphics layer.**
+  - **MEDIA ANALYSIS (Part N)** — kajisho5/media-analysis-skill v0.1.19 (main @ bec48a9), 14 tools, 41 files. Verified: doctor ok; loudness and scene_detection analyses returned ok on real clips. NOT bundled: the two binary ONNX models (yamnet_patches.onnx ~7.5 MB, silero_vad_16k_op15.onnx ~1.3 MB — text-only channel); the vad and audio_events analyzers need them copied in from upstream, everything else works without them.
+  - **QC (Part O)** — kajisho5/qc-skill v1.4.0 (main @ 9c61ed7), 3 tools / 72 checks, 37 files. Verified: doctor AVAILABLE; a `check` operation on a rendered MP4 completed with a per-check report.
+  - **SUBTITLE (Part P)** — kajisho5/subtitle-skill v0.10.0 (main @ c1d699d), 4 tools, 34 files. Verified: doctor healthy against the bundled ffmpeg-skill; `generate` wrote a correct SRT from a decided cue document.
+  - **TRANSCRIPTION (Part Q)** — kajisho5/transcription-skill v0.13.0 (main @ d8ad0bf), 7 tools, 50 files. Verified: doctor ok when run under a python with faster-whisper installed (engines and cached tiny/small/medium models reported AVAILABLE), and a transcribe run completed and wrote its transcript JSON. Honest caveat: on the synthetic Bengali promo voice the small model's output hallucinated — the pipeline is proven, recognition quality is content-dependent and must be spot-checked (the skill itself never invents speech labels; the ASR model is the limit).
+  - **VIDEO EDITING (Part R)** — kajisho5/video-editing-skill v0.8.0 (main @ c473780), 15 operation types, 25 files. Verified: doctor ok; a TRIM graph executed end-to-end into a real output file.
+  - **MOTION GRAPHICS (Part S)** — kajisho5/motion-graphics-skill v0.4.0 (main @ f9aecfe), 15 element types, 25 files. Verified: doctor ok; a title element rendered over real footage and visually confirmed.
+- Capability index: 373 -> **431** named items (+14 analysis tools, +3 QC tools, +4 subtitle tools, +7 transcription tools, +15 editing operations, +15 graphics element types).
+
+
 ## 1.9.0 — 2026-11-18
 
 ### Added
