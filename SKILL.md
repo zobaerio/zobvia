@@ -9,8 +9,11 @@ One skill, four jobs: **learn how a video is edited**, **create a new
 video in a learned or built-in style**, **plan a full documentary
 production package** from a title or topic, and **edit real footage**
 with FFmpeg. Style is learned; footage, voice, and music are never
-reused. Two bundled sub-skills extend it further: a 3D cartoon
-explainer engine (Part E) and the ffmpeg-skill toolset (Part F).
+reused. Bundled sub-skills extend it further: a 3D cartoon
+explainer engine (Part E), the ffmpeg-skill toolset (Part F), a
+headless-Blender 3D asset toolkit (Part G), a typed audio-production
+engine (Part H), a colour-grading engine (Part I) and an HTML-scene
+video renderer (Part J).
 
 ## Philosophy
 
@@ -55,6 +58,10 @@ first LEARN or CREATE run on a machine:
 | Documentary title/topic, "documentary", "ডকুমেন্টারি" | DOCUMENTARY |
 | 3D cartoon explainer / "what if" short with characters | 3D EXPLAINER (Part E) |
 | An existing video/audio file to trim, cut, reframe, caption, clean or export | EDIT (Part F) |
+| A 3D model file (glb/fbx/obj/stl/usd/blend) to inspect, convert, optimise, bake or render | BLENDER (Part G) |
+| An audio operation graph: gain/trim/mix/stems/loudness versions/downmix/noise reduction | AUDIO PRODUCTION (Part H) |
+| A colour treatment on a video: HDR to SDR, LUT, retag, primary correction, legalize, camera match | COLOR GRADING (Part I) |
+| An HTML scene / title card / slate / stinger to render to video | HYPERFRAMES (Part J) |
 | Neither, or genuinely unclear | Ask one question: learn or create? |
 
 Auto-selection rules:
@@ -505,6 +512,74 @@ do not use EDIT tools to build a CREATE video or vice versa. Its
 Zobvia's own transcribe.py / make_srt.py to make the SRT first, then
 caption.py burns or muxes it. Upstream: kajisho5/ffmpeg-skill, MIT.
 
+## PART G — BLENDER (bundled blender-skill)
+
+For 3D asset work — inspect, convert (glb/gltf/fbx/obj/stl/usd/ply),
+optimise (decimate, cap textures), bake maps (AO/normal/roughness),
+LOD, thumbnails/turntable/4-view renders, budget checks for
+three.js/Unity/Unreal/Godot/iOS-AR/Android-AR/WebXR/3D-print — use
+the bundled blender-skill at `extras/blender-skill/`: read its
+`SKILL.md` and run `python3 extras/blender-skill/scripts/<name>.py`
+(14 tools). It drives a LOCAL headless Blender 4.2+ (`blender -b`);
+if Blender is not installed the tools answer with a structured
+`missing_tool` error — report that honestly, never fake a result.
+Upstream: kajisho5/blender-skill, MIT.
+
+## PART H — AUDIO PRODUCTION (bundled audio-production-skill)
+
+For executing an ALREADY-DECIDED audio operation graph — gain, trim,
+cut, silence/filler removal at given timestamps, fades, EBU R128 /
+ATSC loudness setting and multi-version delivery, mixing 2–8 tracks
+with ducking, stems, mono/stereo/surround downmix, FFT noise
+reduction, speech cleanup, format conversion (18 operation types) —
+use the bundled audio-production-skill at
+`extras/audio-production-skill/`: read its `SKILL.md`; it takes an
+`audio-production/request@1` JSON document on stdin and answers with
+one response document (`PYTHONPATH=extras/audio-production-skill/src
+python3 -m audio_production.cli run - --json`, or `doctor`/`plan`/
+`validate`). It delegates measurement and execution to the bundled
+ffmpeg-skill (Part F) — set `AUDIO_PRODUCTION_FFMPEG_SKILL_DIR` to
+`extras/ffmpeg-skill` when it cannot find it. Deciding WHAT to do
+(cut points, targets) stays with you or the user; this engine only
+executes and validates. Upstream: kajisho5/audio-production-skill,
+MIT.
+
+## PART I — COLOR GRADING (bundled color-grading-skill)
+
+For executing an ALREADY-DECIDED colour treatment — HDR (PQ/HLG) to
+SDR BT.709 tone mapping, applying a 3D .cube LUT, rewriting colour
+tags without re-encode, stripping a Dolby Vision RPU, typed primary
+correction (exposure, contrast, saturation, temperature/tint,
+gamma, lift/gain, levels, curves), broadcast-legal soft-clipping
+(EBU R 103), camera matching from a named frame pair, and OCIO/ACES
+transforms (8 operation types) — use the bundled color-grading-skill
+at `extras/color-grading-skill/`: read its `SKILL.md`; same
+request/response pattern (`color-grading/request@1` on stdin,
+`PYTHONPATH=extras/color-grading-skill/src python3 -m
+color_grading.cli run - --json`); set
+`COLOR_GRADING_FFMPEG_SKILL_DIR` to `extras/ffmpeg-skill`. Choosing
+the look is a human/CREATE decision; this engine applies and
+validates it. For a quick one-off grade inside an edit, EDIT's
+`color.py` (Part F) is the lighter tool. Upstream:
+kajisho5/color-grading-skill, MIT.
+
+## PART J — HYPERFRAMES (bundled hyperframes-skill)
+
+For rendering video from HTML scenes — title cards, lower thirds,
+session slates, break screens and stingers from ready templates, or
+an already-decided scene description (size, duration, fps, ordered
+text/image/video layers) rendered deterministically to MP4/WebM/MOV
+— use the bundled hyperframes-skill at `extras/hyperframes-skill/`:
+read its `SKILL.md`; run `npm install` there once, then
+`node extras/hyperframes-skill/scripts/<name>.mjs` (7 tools: doctor,
+template, scene, render, probe, preview, batch). Needs Node >= 22,
+FFmpeg >= 5 and a headless Chromium (on this machine set
+`HYPERFRAMES_BROWSER_PATH` to the Playwright chromium and `TMPDIR`
+to a roomy folder — renders stage frames in temp space). This is a
+scene renderer, not an editor: CREATE (Part B) remains the tool for
+SRT-driven motion graphics. Upstream: kajisho5/hyperframes-skill,
+MIT.
+
 ## Hard Rules
 
 1. Measurable numbers over adjectives — in analysis, plans, and reports.
@@ -579,3 +654,7 @@ up front.
 | `references/master-documentary-prompt.md` | The flagship DOCUMENTARY prompt (owner-supplied, verbatim) — paste into any Claude session with a documentary title/topic; runs the 10-stage gated documentary package workflow (Part D) |
 | `extras/zach-d-films/SKILL.md` | 3D EXPLAINER sub-skill (Part E) — Three.js cartoon explainer shorts; read before any 3D explainer job |
 | `extras/ffmpeg-skill/SKILL.md` | EDIT sub-skill (Part F) — 42 FFmpeg tools for editing real footage; read before any EDIT job |
+| `extras/blender-skill/SKILL.md` | BLENDER sub-skill (Part G) — headless-Blender 3D asset tools; read before any 3D asset job |
+| `extras/audio-production-skill/SKILL.md` | AUDIO PRODUCTION sub-skill (Part H) — typed audio operation graphs; read before any audio-production job |
+| `extras/color-grading-skill/SKILL.md` | COLOR GRADING sub-skill (Part I) — typed colour treatments; read before any grading job |
+| `extras/hyperframes-skill/SKILL.md` | HYPERFRAMES sub-skill (Part J) — HTML-scene video rendering; read before any HyperFrames job |

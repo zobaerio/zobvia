@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.0 — 2026-11-18
+
+### Added
+- **Four more bundled sub-skills from the kajisho5 ecosystem (all MIT), at the owner's request** — the same author as the ffmpeg-skill bundled in 1.7.0, designed to work together:
+  - **BLENDER (Part G)** — kajisho5/blender-skill v0.31.0 (main @ fad904d) at `extras/blender-skill/`: 14 host tools driving a local headless Blender 4.2+ to inspect, convert, optimise, bake, LOD and render 3D assets (glb/fbx/obj/stl/usd/.blend) and check them against engine/AR/print budgets. Bundled: SKILL.md, scripts/, references/, LICENSE (41 files). Host CLIs verified here (compile, help, structured missing_tool error); the 3D operations themselves need a Blender binary, which this machine does not have — stated honestly, not faked.
+  - **AUDIO PRODUCTION (Part H)** — kajisho5/audio-production-skill v1.3.2 (main @ d179cac) at `extras/audio-production-skill/`: 18 typed audio operations (gain, trim/cut, silence/filler removal, fades, loudness set + multi-version delivery, mix with ducking, stems, downmix, noise reduction, voice cleanup, conversion) executed as validated request/response JSON graphs via the bundled ffmpeg-skill. Bundled: SKILL.md, src/, pyproject.toml, LICENSE (17 files). Verified end-to-end here: doctor ok against the bundled ffmpeg-skill, and a GAIN operation executed on a real WAV with full provenance.
+  - **COLOR GRADING (Part I)** — kajisho5/color-grading-skill v1.1.0 (main @ 0ddeaac) at `extras/color-grading-skill/`: 8 typed colour operations (HDR to SDR tone mapping, .cube LUT apply, retag, strip Dolby Vision RPU, primary correction, broadcast legalize, camera match, OCIO/ACES transform). Bundled: SKILL.md, src/, pyproject.toml, LICENSE (17 files; upstream assets/ held only a logo and was not bundled). Verified end-to-end here: a PRIMARY_CORRECTION (exposure/saturation) rendered a graded MP4 via the bundled ffmpeg-skill.
+  - **HYPERFRAMES (Part J)** — kajisho5/hyperframes-skill v0.10.0 (main @ 193f84d) at `extras/hyperframes-skill/`: 7 Node tools rendering HTML scenes to video (9 templates: title cards, lower thirds, slates, break screens, stingers). Bundled: SKILL.md, scripts/, lib/, templates/, references/, bin/, package.json + lock, LICENSE (49 files). Verified end-to-end here: npm install, doctor fully ok (with TMPDIR on a roomy disk and HYPERFRAMES_BROWSER_PATH pointing at the Playwright Chromium), and a template -> scene -> render run produced a verified 1920x1080 / 30 fps / 2 s MP4.
+- Capability index: 277 -> **324** named items (+14 Blender tools, +18 audio operations, +8 grading operations, +7 HyperFrames tools).
+
+
 ## 1.7.0 — 2026-11-17
 
 ### Added

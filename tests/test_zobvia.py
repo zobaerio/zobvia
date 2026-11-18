@@ -12,7 +12,8 @@ v1.3 (12 SFX types + peak levels, --genre scenes + caption defaults,
 v1.4 (accent2/accent3 WCAG companions, full SFX coverage — every scene
 sounded, multi-colour + interactivity layer in the starter source),
 v1.6 (DOCUMENTARY mode bundle, 3D explainer sub-skill bundle),
-v1.7 (EDIT mode: bundled ffmpeg-skill toolset).
+v1.7 (EDIT mode: bundled ffmpeg-skill toolset),
+v1.8 (BLENDER, AUDIO PRODUCTION, COLOR GRADING, HYPERFRAMES bundles).
 """
 import json
 import subprocess
@@ -822,3 +823,29 @@ class BundledAdditionsV16(unittest.TestCase):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("PART F", skill)
         self.assertIn("extras/ffmpeg-skill", skill)
+
+
+    def test_kajisho5_ecosystem_bundled(self):
+        bundles = {
+            "blender-skill": ("scripts/info.py", "scripts/check.py",
+                              "scripts/convert.py", "scripts/render.py"),
+            "audio-production-skill": (
+                "src/audio_production/cli.py",
+                "src/audio_production/model.py", "pyproject.toml"),
+            "color-grading-skill": (
+                "src/color_grading/cli.py",
+                "src/color_grading/model.py", "pyproject.toml"),
+            "hyperframes-skill": ("scripts/render.mjs", "scripts/scene.mjs",
+                                  "lib/render-core.mjs", "package.json"),
+        }
+        for name, keys in bundles.items():
+            base = ROOT / "extras" / name
+            self.assertTrue((base / "SKILL.md").is_file(), name)
+            self.assertTrue((base / "LICENSE").is_file(), name)
+            for rel in keys:
+                self.assertTrue((base / rel).is_file(), f"{name}/{rel}")
+            sub = (base / "SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("Bundled with Zobvia", sub, name)
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        for part in ("PART G", "PART H", "PART I", "PART J"):
+            self.assertIn(part, skill)
