@@ -1,0 +1,51 @@
+"""Locate an installed media-analysis-skill (kajisho5/media-analysis-skill). Two shapes are accepted: a source checkout
+(<dir>/src/media_analysis/cli.py, run as `python -m media_analysis.cli` (without the current directory on sys.path, ADR-074) with PYTHONPATH=<dir>/src) or the installed
+console script `media-analysis` on PATH. The agent never imports the package."""
+from __future__ import annotations
+
+import os
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from ..discovery import default_skill_dirs, python_module_command
+
+ENV_DIR = "VIDEO_AGENT_MEDIA_ANALYSIS_DIR"
+
+
+@dataclass
+class MediaAnalysisSkill:
+    command: List[str]            # argv prefix, e.g. [python, "-m", "media_analysis.cli"] or ["media-analysis"]
+    root: Optional[Path]          # checkout root when run from source
+    env: Dict[str, str]           # extra environment for the child (PYTHONPATH for a checkout)
+
+    def describe(self) -> str:
+        return str(self.root) if self.root else self.command[0]
+
+
+def _from_checkout(root: Path) -> Optional[MediaAnalysisSkill]:
+    cli = root / "src" / "media_analysis" / "cli.py"
+    if cli.is_file():
+        return MediaAnalysisSkill(python_module_command("media_analysis.cli"), root, {"PYTHONPATH": str(root / "src")})
+    return None
+
+
+def locate_media_analysis(explicit: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> Optional[MediaAnalysisSkill]:
+    env = os.environ if env is None else env
+    authoritative: List[Path] = []
+    if explicit:
+        authoritative.append(Path(explicit))
+    if env.get(ENV_DIR):
+        authoritative.append(Path(env[ENV_DIR]))
+    # An explicit dir or the env var names exactly where to look; if there is no checkout there, that is the
+    # answer (MISSING), not a cue to keep guessing sibling directories that happen to exist here too.
+    cands = authoritative or default_skill_dirs("media-analysis-skill")
+    for c in cands:
+        found = _from_checkout(c)
+        if found:
+            return found
+    exe = shutil.which("media-analysis", path=env.get("PATH"))
+    if exe:
+        return MediaAnalysisSkill([exe], None, {})
+    return None

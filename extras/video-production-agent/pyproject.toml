@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "video-production-agent"
+version = "0.1.0"
+description = "AI video production orchestrator that plans, validates and executes productions through ffmpeg-skill"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+dependencies = [
+  "jsonschema>=4.17",
+]
+
+[project.optional-dependencies]
+# The bundled Anthropic (Claude) provider, ADR-049. Without it the pipeline stays fully deterministic.
+ai = ["anthropic>=2.3; python_version >= '3.10'"]
+
+[project.scripts]
+video-agent = "video_agent.cli:main"
+video-agent-mcp = "video_agent.mcp_server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+video_agent = ["../../schemas/*.json", "../../profiles/*.json", "tools/*/contract_*.json", "skills/pins/*.json"]   # pinned Skill contracts (read at import time)

@@ -1,0 +1,99 @@
+"""Error classification and finite recovery strategies (MASTER_SPEC §32)."""
+from __future__ import annotations
+
+import re
+from typing import Any, Dict, Optional
+
+from ..models import ToolResult
+
+RECOVERY_TABLE: Dict[str, Dict[str, Any]] = {
+    "TOOL_MISSING":   {"action": "BLOCK", "hint": "run `video-agent doctor`; ffmpeg or ffmpeg-skill is not available"},
+    "INPUT_MISSING":  {"action": "BLOCK", "hint": "input file disappeared or is outside the allowed roots"},
+    "INVALID_ARGS":   {"action": "BLOCK", "hint": "compiler produced arguments the tool rejects (agent bug, not retried)"},
+    # ADR-097 addendum 6 (color-grading-skill 0.5.0): the Skill refuses the source itself, e.g. an alpha plane its re-encode would drop
+    # (UNSUPPORTED_FORMAT, alpha_not_preserved). Not an agent bug and not retryable: the same source fails the same way
+    "UNSUPPORTED_MEDIA": {"action": "BLOCK", "hint": "the Skill refuses this source for the operation (see the error's reason, e.g. alpha_not_preserved: an alpha "
+                                                     "plane a re-encode would drop); not retried -- flatten or export the source first, or use an operation that "
+                                                     "keeps it (RETAG / STRIP_DOVI)"},
+    # ADR-106 (color-grading-skill 0.6.0): ffmpeg-skill/color's own check of the written file failed (VALIDATION_ERROR, never retryable): the same
+    # source and engine fail the same way, so both BLOCK with what to change
+    "LEGAL_LEVELS_FAILED": {"action": "BLOCK", "hint": "LEGALIZE's clamp left the file outside the profile's legal levels by ffmpeg-skill's own measurement "
+                                                       "(legal_levels_failed); not retried -- check the source and the color.legalize profile / knee"},
+    "ALPHA_NOT_KEPT": {"action": "BLOCK", "hint": "the grade did not keep the source's alpha as verified by ffmpeg-skill (alpha_lost / alpha_mismatch / "
+                                                  "alpha_unverified); not retried -- export the source to ProRes 4444 / qtrle / PNG (a VP9 alpha is not "
+                                                  "seen by the probe) or use an ffmpeg-skill whose color --keep-alpha check passes (3.2.3+)"},
+    # ADR-107 (subtitle-skill 0.9.0): a burn no installed font covers (INVALID_INPUT, details.field fonts_dir; never retryable): the same machine
+    # fails the same way until the user gives the fonts. The agent never downloads, picks or copies a font
+    "FONTS_DIR_REQUIRED": {"action": "BLOCK", "hint": "no installed font covers the subtitle text, so the burn-in was refused; not retried -- supply a fonts directory: "
+                                                      "put a font file (.ttf / .otf / .ttc) that covers the subtitle's script in a directory inside the workspace "
+                                                      "and set subtitle.fonts_dir to it (or install such a font), then re-run"},
+    # ADR-107 addendum 7 (transcription-skill 0.10.0): a model limited to some languages refuses another language or a request without one
+    # (INVALID_INPUT, details.reason language_unsupported / language_detection_unsupported, details.model / supported; never retryable)
+    "LANGUAGE_UNSUPPORTED": {"action": "BLOCK", "hint": "the transcription model recognises only the languages in the error's details.supported (or does not detect "
+                                                        "the language); not retried -- name the language spoken, if it is one of them, or choose a model / engine "
+                                                        "that recognises it"},
+    # ADR-107 addendum 7 (sound-design-skill 0.3.0): generate-bgm refuses a model the GPU cannot hold before any work (INSUFFICIENT_VRAM, exit 3, not
+    # retryable); the same machine fails the same way, and the agent never switches the model by itself
+    "INSUFFICIENT_VRAM": {"action": "BLOCK", "hint": "the GPU has less memory than the music model needs (see the error's message); not retried -- generate the bed "
+                                                     "with the Skill's default model (details.default_model, acestep-v15-turbo in sound-design-skill 0.3.0) by not "
+                                                     "naming a model, or on a GPU with enough memory"},
+    "ENCODER_FAILED": {"action": "RETRY_ALT", "hint": "retry once with frame-accurate mode", "alt_args": {"ffmpeg-skill/cut": {"accurate": True}}},
+    "TIMEOUT":        {"action": "RETRY_LONGER", "hint": "retry once with a doubled timeout"},
+    "DISK_FULL":      {"action": "BLOCK", "hint": "free disk space in the workspace"},
+    "UNKNOWN":        {"action": "RETRY_SAME", "hint": "retry once with identical arguments"},
+    "SKILL_ERROR":    {"action": "BLOCK", "hint": "the Skill refused or could not validate its output (not retryable as reported by the Skill); see the error code"},
+    "INTERRUPTED":    {"action": "BLOCK", "hint": "the Skill was cancelled (interrupt, not a timeout); re-run the job"},
+    # ADR-085 (dubbing-skill CONSENT_REQUIRED): the voice owner's consent record is missing or does not check out. It comes from the user; the
+    # agent never writes, edits or signs one, and never retries (the Skill's ADR-012: not retryable)
+    "CONSENT_REQUIRED": {"action": "BLOCK", "hint": "the reference voice's consent record is missing or does not check out (see the error's reason / problems); "
+                                                    "the user supplies a valid dubbing/consent@1 record -- the agent never makes one -- then re-run"},
+}
+
+
+def _skill_class(r: ToolResult) -> Optional[str]:
+    """A structured error from an external Skill (data.error with the Skill's code, its retryable flag and the recovery class the
+    adapter mapped it to). The Skill's own verdict on retryability wins: a non-retryable code never becomes a blind retry."""
+    err = (r.data or {}).get("error") if isinstance(r.data, dict) else None
+    if not isinstance(err, dict) or not err.get("recovery_class"):
+        return None
+    cls = str(err["recovery_class"])
+    if cls == "TIMEOUT" and (err.get("details") or {}).get("reason") not in (None, "timeout"):
+        return "INTERRUPTED"   # a CANCELLED that was not a timeout (signal): a longer timeout would not help
+    if cls not in RECOVERY_TABLE:
+        return "SKILL_ERROR"
+    if RECOVERY_TABLE[cls]["action"] != "BLOCK" and err.get("retryable") is False:
+        return "SKILL_ERROR"
+    return cls
+
+
+def classify_error(r: ToolResult) -> str:
+    skill_cls = _skill_class(r)
+    if skill_cls:
+        return skill_cls
+    txt = (r.stderr_tail or "").lower()
+    if r.exit_code == 127 or "was not found on path" in txt:
+        return "TOOL_MISSING"
+    if r.exit_code == 124 or "timeout" in txt:
+        return "TIMEOUT"
+    if "input not found" in txt or "no such file" in txt or "outside allowed" in txt or "outside workspace" in txt:
+        return "INPUT_MISSING"
+    if "no space left" in txt:
+        return "DISK_FULL"
+    if re.search(r"unrecognized arguments|invalid choice|argument .*: expected|error: (give|use|end must|segment|bad )", txt):
+        return "INVALID_ARGS"
+    if "command failed" in txt or "ffmpeg failed" in txt or "encoder" in txt or "conversion failed" in txt:
+        return "ENCODER_FAILED"
+    return "UNKNOWN"
+
+
+def next_attempt(r: ToolResult, attempt: int, max_attempts: int, timeout: Optional[float]) -> Dict[str, Any]:
+    """Decide what the executor does after a failure. Returns {action, reason, args_patch, timeout}."""
+    cls = classify_error(r)
+    strat = RECOVERY_TABLE[cls]
+    if strat["action"] == "BLOCK" or attempt >= max_attempts:
+        return {"class": cls, "action": "BLOCK", "reason": strat["hint"] if strat["action"] == "BLOCK" else f"max attempts ({max_attempts}) reached after {cls}", "args_patch": {}, "timeout": timeout}
+    if strat["action"] == "RETRY_ALT":
+        return {"class": cls, "action": "RETRY", "reason": strat["hint"], "args_patch": strat["alt_args"].get(r.tool, {}), "timeout": timeout}
+    if strat["action"] == "RETRY_LONGER":
+        return {"class": cls, "action": "RETRY", "reason": strat["hint"], "args_patch": {}, "timeout": (timeout * 2) if timeout else None}
+    return {"class": cls, "action": "RETRY", "reason": strat["hint"], "args_patch": {}, "timeout": timeout}

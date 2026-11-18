@@ -1,0 +1,461 @@
+"""Capability detection. ffmpeg-skill does no feature detection (ARCHITECTURE_REVIEW §1.7), so this is
+the one place where the agent talks to ffmpeg directly, and only for `-version / -encoders / -decoders / -filters`.
+No media is ever processed here."""
+from __future__ import annotations
+
+import os
+import platform
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
+
+from ..tools.discovery import child_env
+from ..tools.ffmpeg_skill.catalog import CATALOG
+from ..tools.ffmpeg_skill.locate import locate_ffmpeg_skill
+from ..tools.ffmpeg_skill.package import PREFIX as FFMPEG_SKILL_PREFIX
+from ..tools.ffmpeg_skill.package import tool_capability
+from ..tools.media_analysis import MediaAnalysisAdapter, locate_media_analysis
+from ..tools.transcription import TranscriptionAdapter, locate_transcription
+from ..tools.video_editing import VideoEditingAdapter, locate_video_editing
+from ..tools.audio_production import AudioProductionAdapter, locate_audio_production
+from ..tools.color_grading import ColorGradingAdapter, locate_color_grading
+from ..tools.motion_graphics import MotionGraphicsAdapter, locate_motion_graphics
+from ..tools.qc import QcAdapter, locate_qc
+from ..tools.subtitle import SubtitleAdapter, locate_subtitle
+from ..tools.thumbnail import ThumbnailAdapter, locate_thumbnail
+from ..tools.ingest import IngestAdapter, locate_ingest
+from ..tools.voice_enhance import VoiceEnhanceAdapter, locate_voice_enhance
+from ..tools.dubbing import DubbingAdapter, locate_dubbing
+from ..tools.publish import PublishAdapter, locate_publish
+from ..tools.nle_bridge import NleBridgeAdapter, locate_nle_bridge
+from ..tools.imagemagick import ImageMagickAdapter, locate_imagemagick
+from ..tools.detection import DetectionAdapter, locate_detection
+from ..tools.diarization import DiarizationAdapter, locate_diarization
+from ..tools.slide_sync import SlideSyncAdapter, locate_slide_sync
+from ..tools.remotion import RemotionAdapter, locate_remotion
+from ..tools.hyperframes import HyperframesAdapter, locate_hyperframes
+from ..tools.sound_design import SoundDesignAdapter, locate_sound_design
+from ..tools.artifacts import ArtifactsAdapter, locate_artifacts
+
+ENCODERS = ["libx264", "libx265", "aac", "prores_ks", "libaom-av1", "libsvtav1", "h264_nvenc", "hevc_nvenc", "h264_videotoolbox", "hevc_videotoolbox", "h264_vaapi", "h264_qsv",
+            "pcm_s16le", "flac", "libmp3lame", "libvorbis", "libopus"]   # audio encoders audio-production-skill's output formats need (ADR-030)
+DECODERS = ["h264", "hevc", "av1", "prores", "vp9"]
+FILTERS = {"libass": ["subtitles", "ass"], "zimg": ["zscale"], "tonemap": ["tonemap"], "loudnorm": ["loudnorm"], "scdet": ["scdet"],
+           "blackdetect": ["blackdetect"], "freezedetect": ["freezedetect"], "astats": ["astats"], "xfade": ["xfade"], "acrossfade": ["acrossfade"],
+           # core audio filters audio-production-skill's operations need; ffmpeg-skill's doctor does not probe them, this resolver measures `ffmpeg -filters` itself
+           "volume": ["volume"], "afade": ["afade"], "amix": ["amix"], "pan": ["pan"], "aformat": ["aformat"], "afftdn": ["afftdn"],
+           "acompressor": ["acompressor"], "alimiter": ["alimiter"], "agate": ["agate"], "highpass": ["highpass"], "deesser": ["deesser"],   # highpass / deesser: VOICE_CLEANUP (ADR-068)
+           # filters the Phase 3 finishing Skills' operations need (ADR-031): motion-graphics elements, LUTs, subtitle burn-in, qc measurements
+           "subtitles": ["subtitles"], "drawtext": ["drawtext"], "drawbox": ["drawbox"], "overlay": ["overlay"], "color": ["color"], "scale": ["scale"],
+           "colorchannelmixer": ["colorchannelmixer"], "chromakey": ["chromakey"], "lut3d": ["lut3d"], "ebur128": ["ebur128"], "silencedetect": ["silencedetect"],
+           # media-analysis 0.1.10+ (edit_style, tool media-analysis/style) declares it; probed so the pinned contract's names all resolve (ADR-097 addendum 6)
+           "edgedetect": ["edgedetect"]}
+AI_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
+
+
+@dataclass
+class Capability:
+    name: str
+    status: str                       # AVAILABLE | MISSING | DEGRADED | UNKNOWN
+    detail: str = ""
+    evidence: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"name": self.name, "status": self.status, "detail": self.detail, "evidence": self.evidence}
+
+
+# ADR-071: ffmpeg-skill #380 (release 2.22.4): export.py keeps the source's subtitle streams (every preset but gif)
+EXPORT_KEEPS_SUBTITLES_FROM = (2, 22, 4)
+
+
+def export_keeps_subtitles(caps: Dict[str, Any]) -> bool:
+    """Whether the located ffmpeg-skill's platform export keeps subtitle streams, from the version the resolver read (a suffix such
+    as -fake is dropped; anything that is not three numbers is unknown and answers False: nothing guessed)."""
+    cap = caps.get("ffmpeg-skill")
+    ev = getattr(cap, "evidence", None) or (cap.get("evidence") if isinstance(cap, dict) else None) or {}
+    try:
+        v = tuple(int(x) for x in str(ev.get("version") or "").split("-")[0].split(".")[:3])
+    except ValueError:
+        return False
+    return len(v) == 3 and v >= EXPORT_KEEPS_SUBTITLES_FROM
+
+
+def delivery_names(caps: Optional[Dict[str, Any]]) -> Tuple[Optional[List[str]], Optional[List[str]], str]:
+    """(presets, platforms, why unknown): the delivery preset and platform names the located ffmpeg-skill's contract publishes, as
+    ffmpeg_skill_capabilities recorded them in the `ffmpeg-skill` capability's evidence (ADR-056 addendum 2, roadmap step 31). A
+    list is None when no contract was read or it does not publish that enum; the validator then says the names were not checked."""
+    cap = (caps or {}).get("ffmpeg-skill")
+    ev = getattr(cap, "evidence", None) or (cap.get("evidence") if isinstance(cap, dict) else None) or {}
+    contract = ev.get("contract") if isinstance(ev, dict) else None
+    if not isinstance(contract, dict):
+        return None, None, "no ffmpeg-skill contract was read (ffmpeg-skill not located)"
+    if contract.get("status") != "checked":
+        return None, None, f"the ffmpeg-skill contract is {contract.get('status')}: {contract.get('reason') or 'no reason given'}"
+    return contract.get("presets"), contract.get("platforms"), "the ffmpeg-skill contract publishes no such names"
+
+
+def ffmpeg_skill_capabilities(skill: Any) -> Dict[str, Capability]:
+    """`ffmpeg-skill` and one `ffmpeg-skill:<tool>` per catalogued script of a located checkout. version_supported() only flags a
+    version outside the verified range (DEGRADED, not MISSING). ADR-056: the catalog checked against the checkout's own contract
+    and doctor -- a refused contract (not 1.x, unreadable) makes the package MISSING; a catalogued tool whose flags /
+    positionals / doctor row do not hold is MISSING on its own capability (ToolSpec.required_capabilities), with the reason
+    in evidence["reason"], which the selection reason and the plan's handoff carry."""
+    supported = skill.version_supported()
+    detail = f"{skill.version} at {skill.root}" if supported else f"{skill.version} at {skill.root} (outside the verified version range; re-verify before relying on it)"
+    chk = skill.catalog_check()
+    status = "AVAILABLE" if supported else "DEGRADED"
+    evidence: Dict[str, Any] = {"root": str(skill.root), "version": skill.version, "scripts": skill.scripts, "version_supported": supported, "contract": chk.to_dict()}
+    if chk.status == "refused":
+        status, detail = "MISSING", f"{detail}; {chk.reason}"
+        evidence["reason"] = chk.reason
+    elif chk.status == "unchecked":
+        detail = f"{detail} ({chk.reason})"
+    elif chk.unavailable:
+        detail = f"{detail}; contract {chk.contract_version} checked, unavailable: {', '.join(sorted(chk.unavailable))}"
+    else:
+        detail = f"{detail}; contract {chk.contract_version} checked"
+    out = {"ffmpeg-skill": Capability("ffmpeg-skill", status, detail, evidence)}
+    for name in CATALOG:
+        if name not in skill.scripts:
+            continue
+        why = chk.tool_reason(name)
+        cap = tool_capability(name)
+        if why:
+            out[cap] = Capability(cap, "MISSING", why, {"reason": why, "tool": FFMPEG_SKILL_PREFIX + name})
+        else:
+            out[cap] = Capability(cap, "AVAILABLE", "catalog flags in the contract" if chk.status == "checked" else f"catalog {chk.status}", {"tool": FFMPEG_SKILL_PREFIX + name})
+    return out
+
+
+def _run(cmd: List[str], timeout: float = 20.0) -> Optional[str]:
+    try:
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout, env=child_env())
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return p.stdout if p.returncode == 0 else None
+
+
+class CapabilityResolver:
+    def __init__(self, ffmpeg_skill_dir: Optional[str] = None, env: Optional[Dict[str, str]] = None, media_analysis_dir: Optional[str] = None,
+                 transcription_dir: Optional[str] = None, offline: bool = False, video_editing_dir: Optional[str] = None, audio_production_dir: Optional[str] = None,
+                 subtitle_dir: Optional[str] = None, thumbnail_dir: Optional[str] = None, color_grading_dir: Optional[str] = None, motion_graphics_dir: Optional[str] = None,
+                 qc_dir: Optional[str] = None):
+        self.subtitle_dir, self.thumbnail_dir, self.color_grading_dir, self.motion_graphics_dir, self.qc_dir = subtitle_dir, thumbnail_dir, color_grading_dir, motion_graphics_dir, qc_dir
+        self.media_analysis_dir = media_analysis_dir
+        self.transcription_dir = transcription_dir
+        self.video_editing_dir = video_editing_dir
+        self.audio_production_dir = audio_production_dir
+        self.offline = bool(offline)
+        self.env = dict(os.environ if env is None else env)
+        self.skill_dir = ffmpeg_skill_dir
+        self._cache: Optional[Dict[str, Capability]] = None
+
+    def resolve(self, refresh: bool = False) -> Dict[str, Capability]:
+        if self._cache is not None and not refresh:
+            return self._cache
+        caps: Dict[str, Capability] = {}
+        caps["python"] = Capability("python", "AVAILABLE" if sys.version_info >= (3, 9) else "DEGRADED", platform.python_version())
+        caps["os"] = Capability("os", "AVAILABLE", platform.system())
+        ffmpeg = shutil.which("ffmpeg")
+        ffprobe = shutil.which("ffprobe")
+        ver = _run([ffmpeg, "-version"]) if ffmpeg else None
+        caps["ffmpeg"] = Capability("ffmpeg", "AVAILABLE" if ver else "MISSING", (ver or "").splitlines()[0] if ver else "not on PATH", {"path": ffmpeg})
+        pver = _run([ffprobe, "-version"]) if ffprobe else None
+        caps["ffprobe"] = Capability("ffprobe", "AVAILABLE" if pver else "MISSING", (pver or "").splitlines()[0] if pver else "not on PATH", {"path": ffprobe})
+        # yt-dlp (URL ingestion, ADR-059): URL download belongs to ingest-skill (`ingest fetch`, yt-dlp as its optional `fetch`
+        # extra), so availability is what ingest-skill's own doctor reports (`checks["yt-dlp"]`), never a binary looked up here.
+        # Optional (never in cli.py's "hard" doctor list): a deployment that never points `plan`/`analyze` at a URL needs none of it.
+        from ..agent.ingest import yt_dlp_capability   # here, not at module top: agent/ imports this module (import cycle)
+        yt_status, yt_detail, yt_ev = yt_dlp_capability(env=self.env)
+        caps["yt-dlp"] = Capability("yt-dlp", yt_status, yt_detail, yt_ev)
+        enc_txt = _run([ffmpeg, "-hide_banner", "-encoders"]) if ffmpeg else None
+        dec_txt = _run([ffmpeg, "-hide_banner", "-decoders"]) if ffmpeg else None
+        flt_txt = _run([ffmpeg, "-hide_banner", "-filters"]) if ffmpeg else None
+        for name in ENCODERS:
+            caps[f"encoder:{name}"] = Capability(f"encoder:{name}", _listed(enc_txt, name))
+        for name in DECODERS:
+            caps[f"decoder:{name}"] = Capability(f"decoder:{name}", _listed(dec_txt, name))
+        for lib, filters in FILTERS.items():
+            st = [_listed(flt_txt, f) for f in filters]
+            caps[f"filter:{lib}"] = Capability(f"filter:{lib}", "AVAILABLE" if all(s == "AVAILABLE" for s in st) else ("MISSING" if "MISSING" in st else "UNKNOWN"), ", ".join(filters))
+        hw = [n for n in ENCODERS if ("nvenc" in n or "videotoolbox" in n or "vaapi" in n or "qsv" in n) and caps[f"encoder:{n}"].status == "AVAILABLE"]
+        caps["gpu"] = Capability("gpu", "AVAILABLE" if hw else ("UNKNOWN" if enc_txt is None else "MISSING"), ", ".join(hw) or "no hardware encoder listed by ffmpeg")
+        caps["hevc"] = Capability("hevc", caps["encoder:libx265"].status, "libx265")
+        caps["prores"] = Capability("prores", caps["encoder:prores_ks"].status, "prores_ks")
+        caps["av1"] = Capability("av1", "AVAILABLE" if any(caps[f"encoder:{n}"].status == "AVAILABLE" for n in ("libaom-av1", "libsvtav1")) else caps["encoder:libaom-av1"].status)
+        # fonts
+        fc = shutil.which("fc-list")
+        if fc:
+            all_fonts = _run([fc]) or ""
+            ja = _run([fc, ":lang=ja", "family"]) or ""
+            caps["fonts"] = Capability("fonts", "AVAILABLE" if all_fonts.strip() else "MISSING", f"{len(all_fonts.splitlines())} fonts")
+            caps["font:cjk-ja"] = Capability("font:cjk-ja", "AVAILABLE" if ja.strip() else "MISSING", (ja.strip().splitlines() or ["none"])[0])
+        else:
+            caps["fonts"] = Capability("fonts", "UNKNOWN", "fc-list not found")
+            caps["font:cjk-ja"] = Capability("font:cjk-ja", "UNKNOWN", "fc-list not found")
+        # ffmpeg-skill. version_supported() only flags a version outside the verified range (DEGRADED, not
+        # MISSING): ffmpeg-skill construction itself stays unguarded (ARCHITECTURE_REVIEW §1.7) regardless of
+        # this status, so an operator sees the warning in `doctor`/`skills` without anything actually breaking.
+        skill = locate_ffmpeg_skill(self.skill_dir, self.env)
+        if skill:
+            caps.update(ffmpeg_skill_capabilities(skill))
+        else:
+            caps["ffmpeg-skill"] = Capability("ffmpeg-skill", "MISSING", "set VIDEO_AGENT_FFMPEG_SKILL_DIR or install with `npx ffmpeg-skill`")
+        # media-analysis-skill (external observation Skill): located checkout / console script + its own doctor
+        ma = locate_media_analysis(self.media_analysis_dir, self.env)
+        if ma:
+            try:
+                ad = MediaAnalysisAdapter(ma, timeout=30.0)
+                doc = ad.doctor()
+                st = "AVAILABLE" if doc.get("status") == "ok" else ("DEGRADED" if doc.get("status") == "degraded" else "MISSING")
+                caps["media-analysis"] = Capability("media-analysis", st, f"{ad.version} at {ma.describe()} (doctor {doc.get('status')})",
+                                                    {"version": ad.version, "root": ma.describe(), "contract": ad.contract.get("schema"), "tools": sorted(ad.tools), "kinds": sorted(ad.kind_to_tool),
+                                                     "execution": ad.contract.get("execution", {}).get("mode"), "doctor": doc.get("status"), "unavailable_tools": doc.get("unavailable_tools") or []})
+            except Exception as e:  # noqa: BLE001 — an incompatible or broken installation is reported, never used
+                caps["media-analysis"] = Capability("media-analysis", "MISSING", f"found at {ma.describe()} but unusable: {str(e)[:160]}")
+        else:
+            caps["media-analysis"] = Capability("media-analysis", "MISSING", "set VIDEO_AGENT_MEDIA_ANALYSIS_DIR to a media-analysis-skill checkout or install `media-analysis`")
+        # transcription-skill (external recognition Skill): located checkout / console script + its own doctor and engine contract
+        ts = locate_transcription(self.transcription_dir, self.env)
+        if ts:
+            try:
+                ad = TranscriptionAdapter(ts, timeout=120.0, offline=self.offline)
+                doc = ad.doctor()
+                rows = {c.get("check"): c for c in doc.get("checks") or []}
+                engines = ad.engine_status()
+                usable = [e for e in engines if e.get("available")]
+                st = "AVAILABLE" if doc.get("ok") else ("DEGRADED" if usable else "MISSING")
+                caps["transcription"] = Capability("transcription", st, f"{ad.version} at {ts.describe()} (doctor {'ok' if doc.get('ok') else doc.get('summary', 'not ready')})",
+                                                   {"version": ad.version, "root": ts.describe(), "schemas": dict(ad.contract.get("schemas") or {}), "tools": sorted(ad.tools),
+                                                    "capabilities": list(ad.contract.get("capabilities") or []), "offline": self.offline,
+                                                    "engines": [{"id": e.get("id"), "version": e.get("version"), "execution_mode": e.get("execution_mode"), "requires_network": e.get("requires_network"),
+                                                                 "available": e.get("available"), "capabilities": e.get("capabilities"), "default_model": e.get("default_model"),
+                                                                 "models": [{"model": m.get("model"), "availability": m.get("availability")} for m in e.get("models") or []]} for e in engines],
+                                                    "doctor": {k: v.get("status") for k, v in rows.items()}, "doctor_ok": bool(doc.get("ok"))})
+            except Exception as e:  # noqa: BLE001 — an incompatible or broken installation is reported, never used
+                caps["transcription"] = Capability("transcription", "MISSING", f"found at {ts.describe()} but unusable: {str(e)[:160]}")
+        else:
+            caps["transcription"] = Capability("transcription", "MISSING", "set VIDEO_AGENT_TRANSCRIPTION_DIR to a transcription-skill checkout or install `transcription`")
+        # video-editing-skill (external editing Skill, ADR-028): located checkout / console script, its contract and its own doctor
+        # (which asks ffmpeg-skill for ffmpeg / ffprobe). AVAILABLE only when the Skill says it is ready; anything else is MISSING —
+        # a half-usable editing engine is never guessed at.
+        ve = locate_video_editing(self.video_editing_dir, self.env)
+        if ve:
+            try:
+                ad = VideoEditingAdapter(ve, timeout=120.0, ffmpeg_skill_dir=str(skill.root) if skill else None)
+                doc = ad.doctor()
+                drift = ad.drift()
+                ok = bool(doc.get("ok")) and not ad.breaking_drift()
+                detail = f"{ad.version} at {ve.describe()} (doctor {'ok' if doc.get('ok') else doc.get('summary', 'not ready')})" + ("; contract drift: " + "; ".join(drift)[:200] if drift else "")
+                caps["video-editing"] = Capability("video-editing", "AVAILABLE" if ok else "MISSING", detail,
+                                                   {"version": ad.version, "root": ve.describe(), "contract": ad.contract.get("schema"), "tools": sorted(ad.tools),
+                                                    "operations": ad.lowering.supported_types(), "contract_only": ad.lowering.contract_only(),
+                                                    "unsupported": [u.get("type") for u in ad.contract.get("unsupported") or []],
+                                                    "engine": dict(ad.contract.get("engine") or {}), "doctor_ok": bool(doc.get("ok")), "problems": list(doc.get("problems") or []),
+                                                    "doctor": {c.get("check"): c.get("status") for c in doc.get("checks") or [] if isinstance(c, dict)}, "drift": drift})
+            except Exception as e:  # noqa: BLE001 — an incompatible or broken installation is reported, never used
+                caps["video-editing"] = Capability("video-editing", "MISSING", f"found at {ve.describe()} but unusable: {str(e)[:160]}")
+        else:
+            caps["video-editing"] = Capability("video-editing", "MISSING", "set VIDEO_AGENT_VIDEO_EDITING_DIR to a video-editing-skill checkout or install `video-editing`")
+        # audio-production-skill (external audio production Skill, ADR-030): located checkout / console script, its contract (checked, drift
+        # against the pinned one) and its own doctor. `audio-production` is AVAILABLE only when the doctor is ok / degraded and there is no
+        # drift. Every operation type gets its own capability `audio-production:<TYPE>` from the doctor's verdict: supported → AVAILABLE,
+        # unsupported → MISSING, unknown → AVAILABLE only when this resolver measured every filter / encoder the operation needs itself
+        # (ffmpeg-skill's doctor does not probe core filters), otherwise UNKNOWN — and UNKNOWN is never selectable.
+        ap = locate_audio_production(self.audio_production_dir, self.env)
+        if ap:
+            try:
+                apa = AudioProductionAdapter(ap, timeout=180.0, ffmpeg_skill_dir=str(skill.root) if skill else None)
+                doc = apa.doctor()
+                drift = apa.drift()
+                ok = doc.get("status") in ("ok", "degraded") and not apa.breaking_drift()
+                detail = f"{apa.version} at {ap.describe()} (doctor {doc.get('status')})" + ("; contract drift: " + "; ".join(drift)[:200] if drift else "")
+                ops = apa.operation_status(doc)
+                specs = {o["type"]: o for o in apa.contract.get("operations") or []}
+                per_op: Dict[str, str] = {}
+                for typ, st in ops.items():
+                    need = [c for c in (specs.get(typ) or {}).get("required_capabilities") or [] if c.startswith(("filter:", "encoder:"))]
+                    if not ok or st == "unsupported":
+                        status = "MISSING"
+                    elif st == "supported":
+                        status = "AVAILABLE"
+                    elif need and all(caps.get(c) is not None and caps[c].status == "AVAILABLE" for c in need):
+                        status = "AVAILABLE"   # the Skill could not tell; this resolver measured the filters / encoders itself
+                    else:
+                        status = "UNKNOWN"
+                    per_op[typ] = status
+                    caps[f"audio-production:{typ}"] = Capability(f"audio-production:{typ}", status, f"doctor {st}" + ("" if st != "unknown" else f"; resolver checked {need}"),
+                                                                {"doctor": st, "required_capabilities": list((specs.get(typ) or {}).get("required_capabilities") or []), "tool": (specs.get(typ) or {}).get("tool")})
+                caps["audio-production"] = Capability("audio-production", "AVAILABLE" if ok else "MISSING", detail,
+                                                      {"version": apa.version, "root": ap.describe(), "contract": apa.contract.get("schema"), "tools": sorted(apa.tools),
+                                                       "operations": per_op, "unsupported": list(apa.lowering.unsupported), "formats": sorted(apa.lowering.formats),
+                                                       "engine": {"id": "ffmpeg-skill", "window": (apa.contract.get("ffmpeg_skill") or {}).get("version_window"),
+                                                                  "detected": ((doc.get("checks") or {}).get("ffmpeg_skill") or {}).get("version")},
+                                                       "doctor": doc.get("status"), "problems": list(doc.get("problems") or []), "warnings": list(doc.get("warnings") or []), "drift": drift})
+            except Exception as e:  # noqa: BLE001 — an incompatible or broken installation is reported, never used
+                caps["audio-production"] = Capability("audio-production", "MISSING", f"found at {ap.describe()} but unusable: {str(e)[:160]}")
+        else:
+            caps["audio-production"] = Capability("audio-production", "MISSING", "set VIDEO_AGENT_AUDIO_PRODUCTION_DIR to an audio-production-skill checkout or install `audio-production`")
+        # ---- Phase 3 finishing Skills (ADR-031 / ADR-032): the same rule for every package — located checkout / console script, contract
+        # checked and compared with the pinned one, the Skill's own doctor; the package capability is AVAILABLE only when the doctor is
+        # ok / degraded (subtitle: healthy) and there is no drift. Per-operation / per-element capabilities follow the doctor's verdict:
+        # supported → AVAILABLE, unsupported / unavailable → MISSING, unknown → AVAILABLE only when this resolver measured every
+        # filter / encoder the operation needs itself, else UNKNOWN (never selectable).
+        self._finishing_skill(caps, "subtitle", locate_subtitle(self.subtitle_dir, self.env), lambda sk: SubtitleAdapter(sk, workspace=None, ffmpeg_skill_dir=str(skill.root) if skill else None, timeout=120.0),
+                              "VIDEO_AGENT_SUBTITLE_DIR", "subtitle-skill", "subtitle-skill", per_item=None)
+        self._finishing_skill(caps, "thumbnail", locate_thumbnail(self.thumbnail_dir, self.env), lambda sk: ThumbnailAdapter(sk, ffmpeg_skill_dir=str(skill.root) if skill else None, timeout=120.0),
+                              "VIDEO_AGENT_THUMBNAIL_DIR", "thumbnail-skill", "thumbnail", per_item=None)
+        self._finishing_skill(caps, "color-grading", locate_color_grading(self.color_grading_dir, self.env), lambda sk: ColorGradingAdapter(sk, ffmpeg_skill_dir=str(skill.root) if skill else None, timeout=180.0),
+                              "VIDEO_AGENT_COLOR_GRADING_DIR", "color-grading-skill", "color-grading",
+                              per_item=lambda ad, doc: (ad.operation_status(doc), {o["type"]: o for o in ad.contract.get("operations") or []}))
+        self._finishing_skill(caps, "motion-graphics", locate_motion_graphics(self.motion_graphics_dir, self.env), lambda sk: MotionGraphicsAdapter(sk, ffmpeg_skill_dir=str(skill.root) if skill else None, timeout=180.0),
+                              "VIDEO_AGENT_MOTION_GRAPHICS_DIR", "motion-graphics-skill", "motion-graphics",
+                              per_item=lambda ad, doc: (ad.element_status(doc), {e["type"]: e for e in ad.contract.get("element_types") or []}))
+        self._finishing_skill(caps, "qc", locate_qc(self.qc_dir, self.env), lambda sk: QcAdapter(sk, timeout=180.0), "VIDEO_AGENT_QC_DIR", "qc-skill", "qc", per_item=None)
+        # ingest-skill's card offload (ADR-066): the same rule -- contract checked against the pinned one (fatal subset only), its own doctor
+        # ok / degraded (xxhash, ffprobe or yt-dlp missing is degraded, not missing: sha256 offloads need none of them)
+        self._finishing_skill(caps, "ingest", locate_ingest(env=self.env), lambda sk: IngestAdapter(sk), "VIDEO_AGENT_INGEST_DIR", "ingest-skill", "ingest", per_item=None)
+        # voice-enhance-skill (ADR-073): the same rule -- contract against the pinned one (fatal subset), its own doctor ok / degraded (an engine not
+        # installed is degraded: the Skill works, that operation does not). Each operation gets `voice-enhance:<TYPE>` from the doctor's
+        # `operations.<op>.ready`, with the Skill's own code (ENGINE_UNAVAILABLE / MODEL_NOT_FOUND) and install line when it is not ready.
+        self._finishing_skill(caps, "voice-enhance", locate_voice_enhance(env=self.env),
+                              lambda sk: VoiceEnhanceAdapter(sk, ffmpeg_skill_dir=str(skill.root) if skill else None), "VIDEO_AGENT_VOICE_ENHANCE_DIR", "voice-enhance-skill",
+                              "voice-enhance", per_item=lambda ad, doc: (ad.operation_status(doc), {}), item_evidence=lambda ad, doc: ad.operation_evidence(doc))
+        # dubbing-skill (ADR-085): the same rule -- contract against the pinned one (fatal subset: the consent gate included), its own doctor ok /
+        # degraded (an engine not installed is degraded). DUB gets `dubbing:DUB` from the doctor's `operations.dub.ready`, with the Skill's own code,
+        # the default engine, its alternatives and every DUB engine's status / install line (a plan naming another engine is judged on that one).
+        self._finishing_skill(caps, "dubbing", locate_dubbing(env=self.env),
+                              lambda sk: DubbingAdapter(sk, ffmpeg_skill_dir=str(skill.root) if skill else None), "VIDEO_AGENT_DUBBING_DIR", "dubbing-skill",
+                              "dubbing", per_item=lambda ad, doc: (ad.operation_status(doc), {}), item_evidence=lambda ad, doc: ad.operation_evidence(doc))
+        # publish-skill (ADR-087): the same rule -- contract against the pinned one (fatal subset: the confirmation gate included), its own doctor
+        # ok / degraded (no ffmpeg-skill for plan, no keychain: degraded). Each implemented platform gets `publish:<PLATFORM>` with the fields it
+        # takes and whether its credentials are present (reported only: they are the user's, checked by the Skill at upload time).
+        self._finishing_skill(caps, "publish", locate_publish(env=self.env), lambda sk: PublishAdapter(sk, ffmpeg_skill_dir=str(skill.root) if skill else None),
+                              "VIDEO_AGENT_PUBLISH_DIR", "publish-skill", "publish", per_item=lambda ad, doc: (ad.platform_status(doc), {}),
+                              item_evidence=lambda ad, doc: ad.platform_evidence(doc))
+        # nle-bridge-skill (ADR-089): the same rule -- contract against the pinned one (fatal subset), its own doctor (nothing beyond Python needed)
+        self._finishing_skill(caps, "nle-bridge", locate_nle_bridge(env=self.env), lambda sk: NleBridgeAdapter(sk, ffmpeg_skill_dir=str(skill.root) if skill else None),
+                              "VIDEO_AGENT_NLE_BRIDGE_DIR", "nle-bridge-skill", "nle-bridge", per_item=None)
+        # imagemagick-skill (ADR-077): the same rule -- contract against the pinned one (fatal subset), its own doctor ok / degraded (sips covers
+        # resize / pad but not strip). Each tool gets `imagemagick-skill:<TYPE>` from the doctor's `tools.<name>.usable`, with the backend.
+        self._finishing_skill(caps, "imagemagick-skill", locate_imagemagick(env=self.env), lambda sk: ImageMagickAdapter(sk), "VIDEO_AGENT_IMAGEMAGICK_DIR", "imagemagick-skill",
+                              "npx imagemagick-skill", per_item=lambda ad, doc: (ad.operation_status(doc), {}), item_evidence=lambda ad, doc: ad.operation_evidence(doc))
+        # detection-skill (ADR-090): the same rule -- contract against the pinned one (fatal subset), its own doctor ok / degraded (tracks / check run, an
+        # engine or model missing). `detection:FACES` follows the doctor's ready.faces and ready.video_frames (ffmpeg-skill named: the agent's own checkout),
+        # with the code its faces command would return (FFMPEG_SKILL_NOT_FOUND / ENGINE_UNAVAILABLE / MODEL_NOT_FOUND) and the doctor's install lines.
+        self._finishing_skill(caps, "detection", locate_detection(env=self.env), lambda sk: DetectionAdapter(sk, ffmpeg_skill_dir=str(skill.root) if skill else None),
+                              "VIDEO_AGENT_DETECTION_DIR", "detection-skill", "detection", per_item=lambda ad, doc: (ad.operation_status(doc), {}),
+                              item_evidence=lambda ad, doc: ad.operation_evidence(doc))
+        # diarization-skill (ADR-086): the same rule -- contract against the pinned one (fatal subset), its own doctor ok / degraded (ASSIGN / CHECK run,
+        # DIARIZE not ready: pyannote.audio, torch or the pipeline directory missing). `diarization:DIARIZE` follows the doctor's ready.diarize, with the
+        # code its diarize would return (ENGINE_UNAVAILABLE / PIPELINE_NOT_FOUND / FFMPEG_NOT_FOUND) and the doctor's install lines.
+        self._finishing_skill(caps, "diarization", locate_diarization(env=self.env), lambda sk: DiarizationAdapter(sk), "VIDEO_AGENT_DIARIZATION_DIR", "diarization-skill",
+                              "diarization", per_item=lambda ad, doc: (ad.operation_status(doc), {}), item_evidence=lambda ad, doc: ad.operation_evidence(doc))
+        # slide-sync-skill (ADR-091): the same rule -- contract against the pinned one (fatal subset), its own doctor ok / degraded (the engine is ready, deck
+        # import is not). `slide-sync:DETECT` / `:MATCH` follow the doctor's engine, `:IMPORT_PDF` / `:IMPORT_OFFICE` its import readiness (with the install line).
+        self._finishing_skill(caps, "slide-sync", locate_slide_sync(env=self.env), lambda sk: SlideSyncAdapter(sk, ffmpeg_skill_dir=str(skill.root) if skill else None),
+                              "VIDEO_AGENT_SLIDE_SYNC_DIR", "slide-sync-skill", "slide-sync", per_item=lambda ad, doc: (ad.operation_status(doc), {}),
+                              item_evidence=lambda ad, doc: ad.operation_evidence(doc))
+        # remotion-ffmpeg-skill (ADR-093): contract against the pinned one (fatal subset), its doctor (python / node / npm / ffmpeg-skill / ffmpeg) ok or fail;
+        # `remotion-ffmpeg-skill:PIPELINE` follows it, with the doctor's fix lines. The user's project is checked per plan (its node_modules/remotion).
+        self._finishing_skill(caps, "remotion-ffmpeg-skill", locate_remotion(env=self.env), lambda sk: RemotionAdapter(sk), "VIDEO_AGENT_REMOTION_DIR", "remotion-ffmpeg-skill",
+                              "npx remotion-ffmpeg-skill", per_item=lambda ad, doc: (ad.operation_status(doc), {}), item_evidence=lambda ad, doc: ad.operation_evidence(doc))
+        # hyperframes-skill (ADR-114): contract against the pinned one (fatal subset), its doctor normalised (ok: template, scene and render usable;
+        # degraded: render is not -- no headless Chromium, ffmpeg or encoder -- so the package is found and `hyperframes-skill:RENDER` is MISSING with the
+        # doctor's missing capabilities and fix line). No Node at all: the checkout is found but unusable, named so.
+        self._finishing_skill(caps, "hyperframes-skill", locate_hyperframes(env=self.env), lambda sk: HyperframesAdapter(sk, ffmpeg_skill_dir=str(skill.root) if skill else None),
+                              "VIDEO_AGENT_HYPERFRAMES_DIR", "hyperframes-skill", "git clone https://github.com/kajisho5/hyperframes-skill && npm ci",
+                              per_item=lambda ad, doc: (ad.operation_status(doc), {}), item_evidence=lambda ad, doc: ad.operation_evidence(doc))
+        # sound-design-skill (ADR-092): the same rule -- contract against the pinned one (fatal subset), its own doctor ok / degraded (an engine missing is degraded:
+        # library mode needs none). `sound-design:LIBRARY` / `:BGM_GENERATE` follow checks.operations.<op>.ready, with the engine's install line when not ready.
+        self._finishing_skill(caps, "sound-design", locate_sound_design(env=self.env), lambda sk: SoundDesignAdapter(sk, ffmpeg_skill_dir=str(skill.root) if skill else None),
+                              "VIDEO_AGENT_SOUND_DESIGN_DIR", "sound-design-skill", "sound-design", per_item=lambda ad, doc: (ad.operation_status(doc), {}),
+                              item_evidence=lambda ad, doc: ad.operation_evidence(doc))
+        # artifacts-skill (ADR-095): the same rule; `artifacts-skill:VERIFY` follows its doctor (some format's structural verification available)
+        self._finishing_skill(caps, "artifacts-skill", locate_artifacts(env=self.env), lambda sk: ArtifactsAdapter(sk), "VIDEO_AGENT_ARTIFACTS_DIR", "artifacts-skill",
+                              "artifacts-skill", per_item=lambda ad, doc: (ad.operation_status(doc), {}), item_evidence=lambda ad, doc: ad.operation_evidence(doc))
+        # optional AI / ASR
+        asr = shutil.which("whisper-cli") or shutil.which("whisper-cpp") or shutil.which("whisper")
+        try:
+            import faster_whisper  # type: ignore  # noqa: F401
+            asr = asr or "faster-whisper"
+        except Exception:
+            pass
+        caps["asr:whisper"] = Capability("asr:whisper", "AVAILABLE" if asr else "MISSING", asr or "no local whisper engine")
+        for prov, var in AI_ENV.items():
+            caps[f"ai:{prov}"] = Capability(f"ai:{prov}", "AVAILABLE" if self.env.get(var) else "MISSING", f"{var} {'set' if self.env.get(var) else 'not set'}")
+        # ADR-049: the bundled Anthropic provider authenticates the way the SDK does (API key, auth token or an
+        # `ant auth login` profile) and needs the `ai` extra installed; report exactly that, never a credential value.
+        from ..providers.claude import AnthropicProvider
+        try:
+            ap = AnthropicProvider(env=dict(self.env))
+            ok = ap.available()
+            detail = f"{ap.model}, effort {ap.effort}" + ("" if ok else " (needs `pip install 'video-production-agent[ai]'` and ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN or an `ant auth login` profile)")
+            caps["ai:anthropic"] = Capability("ai:anthropic", "AVAILABLE" if ok else "MISSING", detail, {"model": ap.model, "effort": ap.effort})
+        except ValueError as e:
+            caps["ai:anthropic"] = Capability("ai:anthropic", "MISSING", str(e))
+        configured = (self.env.get("VIDEO_AGENT_AI_PROVIDER") or "null").lower()
+        caps["ai:provider"] = Capability("ai:provider", "AVAILABLE" if configured not in ("", "null", "none") else "MISSING",
+                                         f"VIDEO_AGENT_AI_PROVIDER={configured} (deterministic pipeline; AI recommendations are proposals only)", {"provider": configured})
+        self._cache = caps
+        return caps
+
+    def _finishing_skill(self, caps: Dict[str, Capability], cap: str, located: Any, make: Any, env_var: str, repo_name: str, console: str, per_item: Any,
+                         item_evidence: Any = None) -> None:
+        """One Phase 3 package → its capability (+ per-operation / per-element capabilities `<cap>:<TYPE>` when the doctor reports them)."""
+        if not located:
+            caps[cap] = Capability(cap, "MISSING", f"set {env_var} to a {repo_name} checkout or install `{console}`")
+            return
+        try:
+            ad = make(located)
+            doc = ad.doctor()
+            drift = ad.drift()
+            # ADR-045: an adapter that classifies drift (breaking_drift()) gates availability on the fatal subset
+            # only; one that doesn't yet (motion-graphics / qc / subtitle / thumbnail) keeps the stricter all-drift
+            # gate until it's given the same treatment.
+            gating_drift = ad.breaking_drift() if hasattr(ad, "breaking_drift") else drift
+            ok = doc.get("status") in ("ok", "degraded") and not gating_drift
+            detail = f"{ad.version} at {located.describe()} (doctor {doc.get('status')})" + ("; contract drift: " + "; ".join(drift)[:200] if drift else "")
+            evidence: Dict[str, Any] = {"version": ad.version, "root": located.describe(), "contract": ad.contract.get("schema") or ad.contract.get("contract_version"),
+                                        "tools": sorted(ad.tools), "doctor": doc.get("status"), "problems": list(doc.get("problems") or []), "warnings": list(doc.get("warnings") or []), "drift": drift}
+            if per_item is not None:
+                statuses, specs = per_item(ad, doc)
+                per: Dict[str, str] = {}
+                for typ, st in statuses.items():
+                    need = [c for c in (specs.get(typ) or {}).get("required_capabilities") or [] if c.startswith(("filter:", "encoder:"))]
+                    if not ok or st in ("unsupported", "unavailable", "missing"):
+                        status = "MISSING"
+                    elif st == "supported":
+                        status = "AVAILABLE"
+                    elif need and all(caps.get(c) is not None and caps[c].status == "AVAILABLE" for c in need):
+                        status = "AVAILABLE"   # the Skill could not tell; this resolver measured the filters / encoders itself
+                    else:
+                        status = "UNKNOWN"
+                    per[typ] = status
+                    extra = (item_evidence(ad, doc) or {}).get(typ) or {} if item_evidence is not None else {}   # ADR-073: the Skill's own reason / code / install line
+                    caps[f"{cap}:{typ}"] = Capability(f"{cap}:{typ}", status, f"doctor {st}" + ("" if st != "unknown" else f"; resolver checked {need}")
+                                                      + (f"; {extra['code']}: {extra.get('detail') or ''}" if extra.get("code") else ""),
+                                                      {"doctor": st, "required_capabilities": list((specs.get(typ) or {}).get("required_capabilities") or []), "tool": (specs.get(typ) or {}).get("tool"),
+                                                       **extra})
+                evidence["operations"] = per
+            caps[cap] = Capability(cap, "AVAILABLE" if ok else "MISSING", detail, evidence)
+        except Exception as e:  # noqa: BLE001 — an incompatible or broken installation is reported, never used
+            caps[cap] = Capability(cap, "MISSING", f"found at {located.describe()} but unusable: {str(e)[:160]}")
+
+    def status(self, name: str) -> str:
+        return self.resolve().get(name, Capability(name, "UNKNOWN")).status
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {k: v.to_dict() for k, v in self.resolve().items()}
+
+
+def _listed(text: Optional[str], name: str) -> str:
+    if text is None:
+        return "UNKNOWN"
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == name:
+            return "AVAILABLE"
+    return "MISSING"
