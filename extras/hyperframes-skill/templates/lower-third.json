@@ -1,0 +1,136 @@
+{
+  "template_version": 1,
+  "name": "lower-third",
+  "description": "Speaker name and affiliation bar, bottom left, on a transparent background. Slides in, fades out. Render with --codec prores (.mov, alpha) to key it over a live feed, or h264 for a flat preview.",
+  "values": {
+    "name": {
+      "type": "string",
+      "required": true,
+      "max_length": 60,
+      "description": "speaker name, one line"
+    },
+    "affiliation": {
+      "type": "string",
+      "required": false,
+      "max_length": 80,
+      "description": "affiliation or title, one line; the second line is omitted when absent"
+    },
+    "duration": {
+      "type": "number",
+      "default": 8,
+      "min": 2,
+      "max": 600,
+      "description": "seconds on screen, including the 0.5 s in and out transitions"
+    },
+    "lang": {
+      "type": "string",
+      "default": "en",
+      "max_length": 16,
+      "description": "BCP 47 language tag of the text (e.g. ja). It does not by itself give Japanese glyph forms: pass --font with a Japanese font for that"
+    }
+  },
+  "derived": {
+    "frame_duration": {
+      "sub": [
+        "duration"
+      ],
+      "description": "duration on the frame grid: rounded to whole frames at 30 fps, as the render's frame count always was"
+    },
+    "loop": {
+      "sub": [
+        "frame_duration",
+        0.5,
+        0.5
+      ],
+      "description": "the loop segment: duration minus the 0.5 s in and 0.5 s out transitions"
+    }
+  },
+  "request": {
+    "scene_version": 1,
+    "id": "lower-third",
+    "width": 1920,
+    "height": 1080,
+    "duration": "{{frame_duration}}",
+    "fps": 30,
+    "background": "transparent",
+    "lang": "{{lang}}",
+    "segments": {
+      "in": 0.5,
+      "loop": "{{loop}}",
+      "out": 0.5
+    },
+    "title": {
+      "safe_area": {
+        "x": 120,
+        "y": 800,
+        "width": 1100,
+        "height": 154
+      }
+    },
+    "layers": [
+      {
+        "type": "text",
+        "id": "name",
+        "start": 0,
+        "duration": "{{frame_duration}}",
+        "text": "{{name}}",
+        "box": {
+          "x": 120,
+          "y": 800,
+          "width": 1100,
+          "height": 90
+        },
+        "style": {
+          "font_size": 56,
+          "font_weight": 700,
+          "align": "left",
+          "color": "#ffffff",
+          "background": "rgba(0,0,0,0.75)"
+        },
+        "transition_in": {
+          "type": "slide",
+          "duration": 0.5,
+          "direction": "left",
+          "distance": 80,
+          "easing": "ease_out"
+        },
+        "transition_out": {
+          "type": "fade",
+          "duration": 0.5
+        }
+      },
+      {
+        "when": "affiliation",
+        "type": "text",
+        "id": "affiliation",
+        "start": 0,
+        "duration": "{{frame_duration}}",
+        "text": "{{affiliation}}",
+        "box": {
+          "x": 120,
+          "y": 890,
+          "width": 1100,
+          "height": 64
+        },
+        "style": {
+          "font_size": 36,
+          "font_weight": 400,
+          "align": "left",
+          "color": "#ffffff",
+          "background": "rgba(0,0,0,0.6)"
+        },
+        "transition_in": {
+          "type": "slide",
+          "duration": 0.5,
+          "direction": "left",
+          "distance": 80,
+          "easing": "ease_out"
+        },
+        "transition_out": {
+          "type": "fade",
+          "duration": 0.5
+        }
+      }
+    ]
+  }
+}

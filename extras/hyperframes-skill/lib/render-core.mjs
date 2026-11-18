@@ -1,0 +1,440 @@
+// Scene directory -> video, through the pinned HyperFrames CLI. Shared by render and preview.
+//
+// HyperFrames launches Chrome and ffmpeg itself. To report the argv that actually ran (not the
+// argv we think it probably used), HyperFrames runs with a preload, lib/argv-recorder.cjs
+// (`node --require`), that writes the argv of every chrome / ffmpeg / ffprobe process it starts to
+// a log directory before starting it (docs/design-decisions.md D10). HyperFrames is pointed at the
+// real binaries through its own documented variables (HYPERFRAMES_BROWSER_PATH,
+// HYPERFRAMES_FFMPEG_PATH, HYPERFRAMES_FFPROBE_PATH). No shell script is generated, so the same
+// path runs on Linux, macOS and Windows.
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveChromium, resolveFfTool, resolveHyperframes } from "./deps.mjs";
+import { ALPHA_MODE, readAlpha } from "./alpha.mjs";
+import { probeFile, probeSequence, SEQUENCE_FRAME_RE } from "./probe.mjs";
+import { runChild, tail } from "./proc.mjs";
+import { DEFAULT_FPS, expectedFrames, readDeclared, readSegments, segmentHtmlPath, setRootAttr } from "./scene-spec.mjs";
+import { ToolError } from "./result.mjs";
+
+export const CODECS = Object.freeze({
+  h264: { format: "mp4", ext: ".mp4", probe: "h264", crf: [0, 51] },
+  vp9: { format: "webm", ext: ".webm", probe: "vp9", crf: [0, 63] },
+  prores: { format: "mov", ext: ".mov", probe: "prores", crf: null },
+  // a directory of RGBA frames, frame_000001.png ... (HyperFrames' png-sequence format)
+  png: { format: "png-sequence", ext: "", probe: "png", crf: null, sequence: true },
+});
+
+/** Does a render with this codec carry an alpha channel? h264 never; vp9, prores and png always. */
+export const codecHasAlpha = (codec) => codec === "vp9" || codec === "prores" || codec === "png";
+
+export const DEFAULT_TIMEOUT_S = 1800;
+
+// Environment every HyperFrames invocation gets: no telemetry, no update check, no auto
+// install. PRODUCER_HEADLESS_SHELL_PATH is removed because HyperFrames lets it override
+// HYPERFRAMES_BROWSER_PATH, which would bypass the shim (and the browser doctor checked).
+export function hyperframesEnv(extra = {}) {
+  const env = { ...process.env };
+  delete env.PRODUCER_HEADLESS_SHELL_PATH;
+  delete env.GEMINI_API_KEY;
+  return {
+    ...env,
+    HYPERFRAMES_NO_TELEMETRY: "1",
+    DO_NOT_TRACK: "1",
+    HYPERFRAMES_NO_UPDATE_CHECK: "1",
+    HYPERFRAMES_NO_AUTO_INSTALL: "1",
+    FORCE_COLOR: "0",
+    NO_COLOR: "1",
+    ...extra,
+  };
+}
+
+// The preload HyperFrames runs with (docs/design-decisions.md D10).
+export const ARGV_RECORDER = join(dirname(fileURLToPath(import.meta.url)), "argv-recorder.cjs");
+
+/**
+ * The recorder's configuration: which executables to record, under which role, and whether to
+ * record the exit status. chrome's is not: HyperFrames ends the browser itself at the end of
+ * every render, so its exit status says nothing about the render (docs/contract.md, commands[]).
+ */
+export function recorderEnv(logDir, tools) {
+  const table = {};
+  for (const [role, path, rc] of [["chrome", tools.chrome.path, false], ["ffmpeg", tools.ffmpeg, true], ["ffprobe", tools.ffprobe, true]]) {
+    table[path] = { role, rc };
+    try {
+      const real = realpathSync(path);   // HyperFrames may start the resolved path of a symlink
+      if (real !== path) table[real] = { role, rc };
+    } catch {
+      /* recorded under the given path only */
+    }
+  }
+  // in NODE_OPTIONS as well as on HyperFrames' own command line, so a Node process HyperFrames starts records too
+  const nodeOptions = [process.env.NODE_OPTIONS, `--require ${JSON.stringify(ARGV_RECORDER)}`].filter(Boolean).join(" ");
+  return { HYPERFRAMES_SKILL_ARGV_LOG: logDir, HYPERFRAMES_SKILL_ARGV_TOOLS: JSON.stringify(table), NODE_OPTIONS: nodeOptions };
+}
+
+function readArgvLog(logDir) {
+  const entries = readdirSync(logDir)
+    .filter((f) => f.endsWith(".argv"))
+    .map((f) => {
+      const full = join(logDir, f);
+      const st = statSync(full, { bigint: true });
+      const argv = readFileSync(full, "utf8").split("\0");
+      argv.pop();
+      const rcFile = full.replace(/\.argv$/, ".rc");
+      const rc = existsSync(rcFile) ? Number(readFileSync(rcFile, "utf8")) : null;
+      const role = f.replace(/\.argv$/, "").split("-").pop();
+      return { t: st.mtimeNs, f, argv, rc, role };
+    });
+  entries.sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : a.f.localeCompare(b.f)));
+  return entries;
+}
+
+/** Every file under dir: name, size, mtime; plus sha256 of the markup/script/style files. */
+export function snapshotDir(dir) {
+  const out = {};
+  const walk = (d) => {
+    for (const ent of readdirSync(d, { withFileTypes: true })) {
+      const full = join(d, ent.name);
+      const rel = relative(dir, full);
+      if (ent.isDirectory()) {
+        out[rel + sep] = "dir";
+        walk(full);
+      } else {
+        const st = statSync(full);
+        let h = null;
+        if (/\.(html?|css|m?js|json|svg)$/i.test(ent.name)) h = createHash("sha256").update(readFileSync(full)).digest("hex");
+        out[rel] = `${st.size}:${st.mtimeMs}:${h ?? ""}`;
+      }
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+function diffSnapshots(a, b) {
+  const changed = [];
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) if (a[k] !== b[k]) changed.push(k);
+  return changed.sort();
+}
+
+// Real paths on both sides, so a symlinked output directory cannot point back into the scene.
+function realish(p) {
+  let head = p;
+  const rest = [];
+  while (!existsSync(head) && dirname(head) !== head) {
+    rest.unshift(basename(head));
+    head = dirname(head);
+  }
+  return join(realpathSync(head), ...rest);
+}
+
+function isInside(file, dir) {
+  const f = realish(file);
+  const d = realpathSync(dir);
+  return f === d || f.startsWith(d.endsWith(sep) ? d : d + sep);
+}
+
+function requireTools() {
+  const hf = resolveHyperframes();
+  if (!hf.path) throw new ToolError("missing_tool", "the hyperframes package is not installed", { hint: "run npm install in the hyperframes-skill directory" });
+  const ffmpeg = resolveFfTool("ffmpeg");
+  if (!ffmpeg.path) throw new ToolError("missing_tool", `ffmpeg not found (${ffmpeg.source}: ${ffmpeg.requested})`, { hint: "install FFmpeg >= 5.0 and put it on PATH, or set HYPERFRAMES_SKILL_FFMPEG" });
+  const ffprobe = resolveFfTool("ffprobe");
+  if (!ffprobe.path) throw new ToolError("missing_tool", `ffprobe not found (${ffprobe.source}: ${ffprobe.requested})`, { hint: "install FFmpeg >= 5.0 (it ships ffprobe) and put it on PATH, or set HYPERFRAMES_SKILL_FFPROBE" });
+  const chrome = resolveChromium();
+  if (!chrome.path || !chrome.exists) {
+    throw new ToolError("missing_tool", chrome.path ? `Chromium not found at ${chrome.path} (${chrome.source})` : "no headless-capable Chromium found", {
+      hint: "run `npx hyperframes browser ensure` to download chrome-headless-shell, or set HYPERFRAMES_BROWSER_PATH; `hyperframes-skill doctor` lists what was searched",
+    });
+  }
+  return { hf, ffmpeg: ffmpeg.path, ffprobe: ffprobe.path, chrome };
+}
+
+/**
+ * Validate everything that can be validated without Chrome or ffmpeg, and work out what the
+ * artifact must look like. Pure: reads files, writes nothing.
+ */
+export function planRender({ sceneDir, output, codec = "h264", quality, fps, workers = "auto", overwrite = false, maxDuration }) {
+  const dir = resolve(sceneDir);
+  const index = join(dir, "index.html");
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new ToolError("input", `scene directory not found: ${sceneDir}`);
+  if (!existsSync(index)) throw new ToolError("input", `${sceneDir} has no index.html`, { hint: "pass the directory `scene` wrote" });
+  if (!output) throw new ToolError("input", "-o/--output is required");
+  const out = resolve(output);
+  const spec = CODECS[codec];
+  if (!spec) throw new ToolError("input", `--codec must be one of ${Object.keys(CODECS).join(", ")}`);
+  if (spec.sequence) {
+    if (Object.values(CODECS).some((c) => c.ext && extname(out).toLowerCase() === c.ext)) throw new ToolError("input", `--codec ${codec} writes a directory of PNG frames; the output ${basename(out)} has a video file extension`);
+  } else if (extname(out).toLowerCase() !== spec.ext) throw new ToolError("input", `--codec ${codec} writes ${spec.ext}; the output ${basename(out)} has a different extension`);
+  if (isInside(out, dir)) throw new ToolError("input", "the output must be outside the scene directory (the scene is an input and is never written to)");
+  checkOutputFree(out, output, spec, overwrite);
+  if (quality !== undefined) {
+    if (!spec.crf) throw new ToolError("input", `--quality is not supported with --codec ${codec} (fixed ProRes 4444 profile)`);
+    const [lo, hi] = spec.crf;
+    if (!Number.isInteger(quality) || quality < lo || quality > hi) throw new ToolError("input", `--quality for ${codec} must be an integer ${lo}..${hi} (CRF scale: lower is better)`);
+  }
+  if (workers !== "auto" && !(Number.isInteger(workers) && workers >= 1 && workers <= 8)) throw new ToolError("input", "--workers must be auto or an integer 1..8");
+  const html = readFileSync(index, "utf8");
+  const declared = readDeclared(html, index);
+  const resolvedFps = fps ?? declared.fps ?? DEFAULT_FPS;
+  let duration = declared.duration;
+  if (maxDuration !== undefined && maxDuration < duration) duration = maxDuration;
+  return {
+    sceneDir: dir,
+    index,
+    html,
+    declared,
+    output: out,
+    codec,
+    spec,
+    quality,
+    workers,
+    expected: {
+      width: declared.width,
+      height: declared.height,
+      duration,
+      fps: resolvedFps,
+      frames: expectedFrames(duration, resolvedFps),
+      codec: spec.probe,
+      fps_source: fps !== undefined ? "--fps" : declared.fps !== null ? "data-fps" : "default",
+    },
+    truncated: duration < declared.duration,
+  };
+}
+
+/**
+ * An existing output is refused without --overwrite. A PNG sequence's output is a directory, and
+ * --overwrite replaces it only when it holds nothing but frame_NNNNNN.png files (an earlier
+ * sequence), so it never deletes anything else.
+ */
+function checkOutputFree(out, given, spec, overwrite) {
+  if (!existsSync(out)) return;
+  if (!overwrite) throw new ToolError("input", `output exists: ${given}`, { hint: "pass --overwrite to replace it" });
+  if (!spec.sequence) return;
+  if (!statSync(out).isDirectory()) throw new ToolError("input", `--codec png writes a directory; ${given} is a file`);
+  // regular files named like frames only: a directory called frame_000001.png would be deleted with what is inside it
+  const other = readdirSync(out, { withFileTypes: true }).filter((e) => !e.isFile() || !SEQUENCE_FRAME_RE.test(e.name)).map((e) => e.name + (e.isDirectory() ? "/" : ""));
+  if (other.length) throw new ToolError("input", `--overwrite refused: ${given} holds files that are not frames of a PNG sequence (${other.slice(0, 5).join(", ")}); nothing was touched`);
+}
+
+/** `<dir>/<stem>.<segment><ext>` next to the full render's output. */
+export function segmentOutput(output, name) {
+  const ext = extname(output);
+  return join(dirname(output), `${basename(output, ext)}.${name}${ext}`);
+}
+
+/**
+ * render --segments: one plan per segment the scene declares (data-hfs-segments on the root),
+ * each rendering segments/<name>.html of the same scene directory into `<stem>.<name><ext>`. A
+ * segment of 0 frames gets no plan (output null). Throws ToolError(input) when the scene declares
+ * no segments, a segment is not a whole number of frames at the render's fps, a segment's
+ * composition is missing or declares another length, or an output exists without --overwrite.
+ */
+export function planSegments(plan, { overwrite = false } = {}) {
+  const segs = readSegments(plan.declared, plan.index);
+  if (!segs) throw new ToolError("input", `--segments: ${plan.index} declares no segments`, { hint: "add segments {in, loop, out} to the scene request and run scene again" });
+  const fps = plan.expected.fps;
+  let startFrame = 0;
+  let start = 0;
+  const out = segs.map((S) => {
+    const f = S.duration * fps;
+    const frames = Math.round(f);
+    // the declaration carries seconds to six decimals (1/30 s reads 0.033333), so a frame count within 1/1000 is whole
+    if (Math.abs(f - frames) > 1e-3) throw new ToolError("input", `--segments: the ${S.name} segment (${S.duration}s) is not a whole number of frames at ${fps} fps`);
+    const seg = { name: S.name, start: Number(start.toFixed(6)), duration: S.duration, start_frame: startFrame, frames, output: null, plan: null };
+    startFrame += frames;
+    start += S.duration;
+    if (frames === 0) return seg;
+    const html = join(plan.sceneDir, segmentHtmlPath(S.name));
+    if (!existsSync(html)) throw new ToolError("input", `--segments: ${html} is missing`, { hint: "run scene again on the request; it writes one composition per segment" });
+    const text = readFileSync(html, "utf8");
+    const declared = readDeclared(text, html);
+    if (Math.abs(declared.duration - S.duration) > 1e-6) throw new ToolError("input", `--segments: ${html} declares ${declared.duration}s; the root declares the ${S.name} segment as ${S.duration}s`);
+    const output = segmentOutput(plan.output, S.name);
+    if (isInside(output, plan.sceneDir)) throw new ToolError("input", "the output must be outside the scene directory (the scene is an input and is never written to)");
+    checkOutputFree(output, output, plan.spec, overwrite);
+    seg.output = output;
+    seg.plan = { ...plan, output, html: text, declared, stageHtml: text, truncated: false, expected: { ...plan.expected, duration: S.duration, frames } };
+    return seg;
+  });
+  if (startFrame !== plan.expected.frames) throw new ToolError("input", `--segments: the segments add up to ${startFrame} frames; the scene has ${plan.expected.frames}`);
+  return out;
+}
+
+export function hyperframesArgv(hfBin, plan, renderDir, { preset } = {}) {
+  const argv = [process.execPath, "--require", ARGV_RECORDER, hfBin, "render", renderDir, "-o", plan.output, "--fps", String(plan.expected.fps), "--format", plan.spec.format, "--workers", String(plan.workers), "--no-browser-gpu", "--no-best-effort", "--sdr", "--quiet"];
+  if (preset) argv.push("--quality", preset);
+  if (plan.quality !== undefined) argv.push("--crf", String(plan.quality));
+  return argv;
+}
+
+/** Run a plan for real. Returns {probe, verification, hyperframes}; throws ToolError on failure. */
+export async function executeRender(ctx, plan, { timeoutS = DEFAULT_TIMEOUT_S, preset } = {}) {
+  const tools = requireTools();
+  const before = snapshotDir(plan.sceneDir);
+  const work = mkdtempSync(join(tmpdir(), "hyperframes-skill-"));
+  const logDir = join(work, "log");
+  mkdirSync(logDir);
+  let renderDir = plan.sceneDir;
+  try {
+    if (plan.stageHtml !== undefined) {
+      // render --segments: a staged copy whose index.html is one segment's composition
+      renderDir = join(work, "scene");
+      cpSync(plan.sceneDir, renderDir, { recursive: true });
+      writeFileSync(join(renderDir, "index.html"), plan.stageHtml);
+    } else if (plan.truncated) {
+      // preview --max-duration: render a staged copy whose root duration is shortened. The
+      // scene directory itself is never modified.
+      renderDir = join(work, "scene");
+      cpSync(plan.sceneDir, renderDir, { recursive: true });
+      const staged = setRootAttr(plan.html, plan.declared, "data-duration", String(plan.expected.duration));
+      writeFileSync(join(renderDir, "index.html"), staged.html);
+    }
+    const env = hyperframesEnv({
+      HYPERFRAMES_BROWSER_PATH: tools.chrome.path,
+      HYPERFRAMES_FFMPEG_PATH: tools.ffmpeg,
+      HYPERFRAMES_FFPROBE_PATH: tools.ffprobe,
+      ...recorderEnv(logDir, tools),
+    });
+    mkdirSync(dirname(plan.output), { recursive: true });
+    // --overwrite of a PNG sequence: checkOutputFree made sure it holds only frames
+    if (plan.spec.sequence && existsSync(plan.output)) rmSync(plan.output, { recursive: true });
+    const argv = hyperframesArgv(tools.hf.path, plan, renderDir, { preset });
+    const hfEntry = ctx.record(argv, { exit_code: null });
+    ctx.info(`rendering ${plan.index} -> ${plan.output} (${plan.expected.frames} frames @ ${plan.expected.fps} fps)`);
+    let r;
+    try {
+      r = await runChild(argv, { env, cwd: work, timeoutMs: timeoutS * 1000 });
+    } finally {
+      for (const e of readArgvLog(logDir)) ctx.record(e.argv, { via: "hyperframes", role: e.role, exit_code: e.rc });
+    }
+    hfEntry.exit_code = r.status;
+    const hyperframes = { version: tools.hf.version, chromium: { path: tools.chrome.path, source: tools.chrome.source } };
+    if (r.status !== 0) {
+      const failure = classifyFailure(ctx.commands, r.stderr + "\n" + r.stdout);
+      throw new ToolError(failure.kind, `hyperframes render exited ${r.status ?? r.signal}: ${failure.message}`, {
+        details: { hyperframes, classification: failure.evidence, hyperframes_error: failure.message, stderr_tail: tail(r.stderr + "\n" + r.stdout) },
+      });
+    }
+    return { hyperframes, ...verifyArtifact(ctx, plan, before) };
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+/** HyperFrames' own failure text: its last "✗ <title>" line and the lines under it. */
+export function hyperframesFailureMessage(text) {
+  const lines = String(text).split(/\r?\n/);
+  let i = -1;
+  lines.forEach((l, n) => {
+    if (/^\s*✗\s/.test(l)) i = n;
+  });
+  if (i < 0) return null;
+  const title = lines[i].replace(/^\s*✗\s*/, "").trim();
+  const body = lines
+    .slice(i + 1)
+    .map((l) => l.trim())
+    .filter((l) => l && !/^Try --docker/.test(l) && !l.startsWith("["))
+    .slice(0, 6);
+  return [title, ...body].join(" | ");
+}
+
+/**
+ * render vs encode. HyperFrames captures and encodes concurrently, and when capture dies it
+ * tears the encoder down too, so "an ffmpeg process exited non-zero" alone does not mean the
+ * encode failed. `encode` needs two pieces of evidence that agree: HyperFrames' own failure
+ * message names FFmpeg / the encode, and a recorded ffmpeg process exited non-zero.
+ * Anything else is `render` (page load / capture). docs/contract.md, "error.kind".
+ */
+export function classifyFailure(commands, output) {
+  const message = hyperframesFailureMessage(output) ?? "no failure message from hyperframes";
+  const ffmpegFailed = commands.filter((c) => c.via === "hyperframes" && c.role === "ffmpeg" && c.exit_code !== null && c.exit_code !== 0);
+  const saysEncode = /ffmpeg|encod/i.test(message);
+  const kind = saysEncode && ffmpegFailed.length > 0 ? "encode" : "render";
+  return {
+    kind,
+    message,
+    evidence: {
+      hyperframes_message_names_encode: saysEncode,
+      ffmpeg_nonzero_exits: ffmpegFailed.map((c) => c.exit_code),
+    },
+  };
+}
+
+/** The checks behind `verified`. Each step says what was compared and whether it held. */
+export function verifyArtifact(ctx, plan, before) {
+  if (plan.spec.sequence) return verifySequence(ctx, plan, before);
+  const steps = [];
+  const exists = existsSync(plan.output) && statSync(plan.output).size > 0;
+  steps.push({ step: "exists", ok: exists, detail: exists ? `${statSync(plan.output).size} bytes` : "output missing or empty" });
+  let probe = null;
+  if (exists) {
+    try {
+      probe = probeFile(ctx, plan.output);
+    } catch (e) {
+      steps.push({ step: "probe", ok: false, detail: e.message });
+    }
+  }
+  let alpha = null;
+  if (probe) {
+    const v = probe.video;
+    const E = plan.expected;
+    const tol = 1 / E.fps + 0.001;
+    steps.push({ step: "probe", ok: !!v, detail: v ? "video stream read" : "no video stream" });
+    if (v) {
+      steps.push({ step: "codec", ok: v.codec === E.codec, expected: E.codec, actual: v.codec });
+      steps.push({ step: "resolution", ok: v.width === E.width && v.height === E.height, expected: `${E.width}x${E.height}`, actual: `${v.width}x${v.height}` });
+      steps.push({ step: "fps", ok: v.fps !== null && Math.abs(v.fps - E.fps) < 0.01, expected: E.fps, actual: v.fps });
+      steps.push({ step: "frames", ok: v.frames === E.frames, expected: E.frames, actual: v.frames, source: v.frames_source });
+      steps.push({ step: "duration", ok: probe.duration !== null && Math.abs(probe.duration - E.duration) <= tol, expected: E.duration, actual: probe.duration, tolerance: Number(tol.toFixed(4)) });
+      alpha = alphaStep(ctx, plan, plan.output, v, steps);
+    }
+  }
+  inputStep(plan, before, steps);
+  return { probe, alpha, verification: steps };
+}
+
+function inputStep(plan, before, steps) {
+  const changed = diffSnapshots(before, snapshotDir(plan.sceneDir));
+  steps.push({ step: "input_preserved", ok: changed.length === 0, detail: changed.length ? `changed: ${changed.slice(0, 20).join(", ")}` : "scene directory unchanged (names, sizes, mtimes; sha256 of markup files)" });
+}
+
+/**
+ * The alpha read-back: for an alpha codec, the first frame's alpha plane must decode, and the
+ * result states its mode (straight, lib/alpha.mjs). h264 gets {mode: "none"} and no step.
+ */
+function alphaStep(ctx, plan, frameFile, video, steps) {
+  if (!codecHasAlpha(plan.codec)) return { mode: "none", channel: false };
+  const a = readAlpha(ctx, frameFile, video);
+  steps.push({ step: "alpha", ok: a.channel === true, expected: `an alpha channel (${ALPHA_MODE})`, actual: a.channel === true ? { min: a.first_frame.min, max: a.first_frame.max, corners: a.first_frame.corners } : a.reason });
+  return a;
+}
+
+/** A PNG sequence: frame files numbered 1..N, N = the expected frames, every frame RGBA at the scene's size. */
+function verifySequence(ctx, plan, before) {
+  const steps = [];
+  const E = plan.expected;
+  let probe = null;
+  let alpha = null;
+  try {
+    probe = probeSequence(ctx, plan.output);
+    steps.push({ step: "exists", ok: true, detail: `${probe.video?.frames ?? 0} frame files, ${probe.size_bytes} bytes` });
+  } catch (e) {
+    steps.push({ step: "exists", ok: false, detail: e.message });
+  }
+  if (probe) {
+    const v = probe.video;
+    steps.push({ step: "probe", ok: !!v, detail: v ? `first frame read: ${probe.first_frame}` : "first frame has no image stream" });
+    if (v) {
+      steps.push({ step: "codec", ok: v.codec === E.codec, expected: E.codec, actual: v.codec });
+      steps.push({ step: "resolution", ok: v.width === E.width && v.height === E.height, expected: `${E.width}x${E.height}`, actual: `${v.width}x${v.height}` });
+      steps.push({ step: "frames", ok: v.frames === E.frames && probe.contiguous, expected: E.frames, actual: v.frames, source: "files", detail: probe.contiguous ? "numbered 1..N" : "numbering has a gap" });
+      alpha = alphaStep(ctx, plan, probe.first_frame, v, steps);
+    }
+  }
+  inputStep(plan, before, steps);
+  return { probe, alpha, verification: steps };
+}
