@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.12.0 — 2026-11-18
+
+### Added
+- **AUTO-SHORTS (Part Z)** — a native Zobvia engine, `scripts/auto_shorts.py`: one long video -> vertical shorts. Highlight candidates from the bundled ffmpeg-skill `scenes.py` (scene cuts + audio-energy ranking; the manifest labels this a proxy, not a judgement), windows expanded/capped to 20-58 s, cut, reframed to 9:16 blur-pad, captioned from a caller SRT (sliced + re-timed + burned), loudness-normalized to -14 LUFS, with a `manifest.json` of provenance. Verified end-to-end on the 54 s Zobvia promo: two 20 s shorts at 1080x1920 with burned Bengali captions, frames visually checked.
+
+### Corrected
+- The 1.11.0 note said ImageMagick operations were unverified because the binary was missing. The build machine's package install has since completed: the skill's doctor now reports ok (ImageMagick 6 `convert` backend), and a `resize.py` operation is verified (1280x720 -> 480x270, dimensions confirmed). Part Y is verified after all.
+
+
 ## 1.11.0 — 2026-11-18
 
 ### Added

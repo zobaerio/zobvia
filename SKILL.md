@@ -22,8 +22,8 @@ graph executor (Part R) and a deterministic motion-graphics
 renderer (Part S), face/text/object detection (Part T), AI
 dubbing/narration (Part U), speaker diarization (Part V),
 verified media ingest (Part W), an artifact verification
-engine (Part X) and an ImageMagick still-image toolkit
-(Part Y).
+engine (Part X), an ImageMagick still-image toolkit
+(Part Y) and a native Auto-Shorts engine (Part Z).
 
 ## Philosophy
 
@@ -87,6 +87,7 @@ first LEARN or CREATE run on a machine:
 | Camera cards / downloads to offload with verified hashes | INGEST (Part W) |
 | A generated document/artifact to inspect or verify structurally | ARTIFACTS (Part X) |
 | Still images to resize / convert / compose / strip | IMAGEMAGICK (Part Y) |
+| A long video to turn into vertical Shorts/Reels automatically | AUTO-SHORTS (Part Z) |
 | Neither, or genuinely unclear | Ask one question: learn or create? |
 
 Auto-selection rules:
@@ -827,6 +828,23 @@ doctor --json` reports honestly when it is missing). Prefer it
 for batch stills; use THUMBNAIL (Part M) for decided video
 thumbnails. Upstream: kajisho5/imagemagick-skill, MIT.
 
+## PART Z — AUTO-SHORTS (native engine)
+
+For turning ONE long video into vertical shorts automatically,
+run the native engine: `python3 scripts/auto_shorts.py VIDEO
+[--srt FILE] [--count 3] [--min-seconds 20] [--max-seconds 58]
+[--out DIR]`. How it works: highlight candidates come from the
+bundled ffmpeg-skill `scenes.py` (scene cuts + audio-energy
+ranking — a PROXY, not a judgement of what matters; the manifest
+says so and lists every source window for review), each window is
+expanded to the min length and capped at the max, cut, reframed
+to 9:16 with blur-pad (nothing cropped away), captioned from the
+caller's SRT when given (cues sliced and re-timed, then burned),
+and loudness-normalized to -14 LUFS / -1.5 dBTP. Outputs are
+`short-N.mp4` files plus a `manifest.json` with full provenance.
+Always show the user the manifest windows before calling any
+short "the best moment" — energy is not importance.
+
 ## Hard Rules
 
 1. Measurable numbers over adjectives — in analysis, plans, and reports.
@@ -920,3 +938,4 @@ up front.
 | `extras/ingest-skill/SKILL.md` | INGEST sub-skill (Part W) — verified media offload; read before any ingest job |
 | `extras/artifacts-skill/SKILL.md` | ARTIFACTS sub-skill (Part X) — artifact inspection/verification; read before any artifact job |
 | `extras/imagemagick-skill/SKILL.md` | IMAGEMAGICK sub-skill (Part Y) — still-image toolkit; read before any still-image batch job |
+| `scripts/auto_shorts.py` | AUTO-SHORTS engine (Part Z) — long video -> vertical shorts; run for any shorts request |

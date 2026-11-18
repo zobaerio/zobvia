@@ -18,7 +18,8 @@ v1.9 (BRAIN, REMOTION, THUMBNAIL bundles),
 v1.10 (MEDIA ANALYSIS, QC, SUBTITLE, TRANSCRIPTION, VIDEO EDITING,
 MOTION GRAPHICS bundles),
 v1.11 (DETECTION, DUBBING, DIARIZATION, INGEST, ARTIFACTS,
-IMAGEMAGICK bundles).
+IMAGEMAGICK bundles),
+v1.12 (native AUTO-SHORTS engine).
 """
 import json
 import subprocess
@@ -931,3 +932,14 @@ class BundledAdditionsV16(unittest.TestCase):
         for part in ("PART T", "PART U", "PART V", "PART W",
                      "PART X", "PART Y"):
             self.assertIn(part, skill)
+
+
+    def test_auto_shorts_engine(self):
+        script = ROOT / "scripts" / "auto_shorts.py"
+        self.assertTrue(script.is_file())
+        body = script.read_text(encoding="utf-8")
+        for needle in ("scenes.py", "cut.py", "fit.py", "caption.py",
+                       "loudnorm", "manifest"):
+            self.assertIn(needle, body)
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("PART Z", skill)
