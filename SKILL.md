@@ -1,14 +1,16 @@
 ---
 name: zobvia
-description: "Three modes. LEARN: watch a video and extract its editing style into a reusable style skill — use when the user says 'watch this', 'learn this style', 'analyse this video', pastes a video link (YouTube, Shorts, Reels, TikTok) or gives a local video file without an SRT. CREATE: turn an SRT/subtitle file into a Remotion motion-graphics video (1920x1080, 30fps, word-by-word animation, SFX only, full Bengali support) — use when the user says 'make a motion graphics video from this SRT', 'edit in <style> style', pastes or attaches an .srt file, or gives both a video and an SRT (learn the style, then create in it). DOCUMENTARY: turn a documentary title or topic into a complete 10-minute VOX-style YouTube documentary production package (research, script, 8-second scene map, text-to-video prompts, audio package, SEO packaging, thumbnails, checklist) in 10 approval-gated stages — use when the user says 'documentary', 'ডকুমেন্টারি', 'make a documentary about', or gives a documentary title/topic."
+description: "Four modes plus bundled sub-skills. LEARN: watch a video and extract its editing style into a reusable style skill — use when the user says 'watch this', 'learn this style', 'analyse this video', pastes a video link (YouTube, Shorts, Reels, TikTok) or gives a local video file without an SRT. CREATE: turn an SRT/subtitle file into a Remotion motion-graphics video (1920x1080, 30fps, word-by-word animation, SFX only, full Bengali support) — use when the user says 'make a motion graphics video from this SRT', 'edit in <style> style', pastes or attaches an .srt file, or gives both a video and an SRT (learn the style, then create in it). DOCUMENTARY: turn a documentary title or topic into a complete 10-minute VOX-style YouTube documentary production package (research, script, 8-second scene map, text-to-video prompts, audio package, SEO packaging, thumbnails, checklist) in 10 approval-gated stages — use when the user says 'documentary', 'ডকুমেন্টারি', 'make a documentary about', or gives a documentary title/topic. EDIT: edit an existing video or audio file with local FFmpeg (cut, join, silence removal, reframe, captions, loudness, platform exports, delivery checks) via the bundled ffmpeg-skill — use when the user gives a video/audio file and asks to trim, cut, resize, reframe, caption, clean up, or export it for a platform."
 ---
 
 # Zobvia
 
-One skill, three jobs: **learn how a video is edited**, **create a new
-video in a learned or built-in style**, and **plan a full documentary
-production package** from a title or topic. Style is learned; footage,
-voice, and music are never reused.
+One skill, four jobs: **learn how a video is edited**, **create a new
+video in a learned or built-in style**, **plan a full documentary
+production package** from a title or topic, and **edit real footage**
+with FFmpeg. Style is learned; footage, voice, and music are never
+reused. Two bundled sub-skills extend it further: a 3D cartoon
+explainer engine (Part E) and the ffmpeg-skill toolset (Part F).
 
 ## Philosophy
 
@@ -52,6 +54,7 @@ first LEARN or CREATE run on a machine:
 | "edit in `<style>` style" + SRT | CREATE using `.claude/skills/style-<slug>/` |
 | Documentary title/topic, "documentary", "ডকুমেন্টারি" | DOCUMENTARY |
 | 3D cartoon explainer / "what if" short with characters | 3D EXPLAINER (Part E) |
+| An existing video/audio file to trim, cut, reframe, caption, clean or export | EDIT (Part F) |
 | Neither, or genuinely unclear | Ask one question: learn or create? |
 
 Auto-selection rules:
@@ -484,6 +487,24 @@ ancient armour stop a bullet?", 29.5 s). Word timings come from
 voiceover; there is no bundled TTS. On a GPU-less machine set
 `GL=swiftshader` (renders, but slowly).
 
+## PART F — EDIT (bundled ffmpeg-skill)
+
+For editing an EXISTING video or audio file — trim/cut/join, silence
+removal (jump cuts), reframing (16:9 to 9:16 and friends), burned or
+muxed captions, overlays, audio cleanup and sync, loudness
+normalisation, platform exports (Reels, TikTok, Shorts, YouTube, X,
+LinkedIn, Facebook, podcast, audiogram) and delivery checks — use the
+bundled ffmpeg-skill at `extras/ffmpeg-skill/`: read its `SKILL.md`
+and follow its workflow (probe first, prefer lossless, dry-run plan,
+check, verify, never overwrite the source). Its 42 tools run as
+`python3 extras/ffmpeg-skill/scripts/<name>.py` with only FFmpeg 6.1+
+and Python 3.10+; no cloud, no API keys. EDIT cuts and finishes real
+footage; CREATE (Part B) still makes motion graphics from an SRT —
+do not use EDIT tools to build a CREATE video or vice versa. Its
+`--transcribe` captions need a local speech engine; without one, use
+Zobvia's own transcribe.py / make_srt.py to make the SRT first, then
+caption.py burns or muxes it. Upstream: kajisho5/ffmpeg-skill, MIT.
+
 ## Hard Rules
 
 1. Measurable numbers over adjectives — in analysis, plans, and reports.
@@ -557,3 +578,4 @@ up front.
 | `references/master-create-prompt.md` | The flagship CREATE prompt (owner-supplied, verbatim) — paste into any Claude session with an SRT; runs the full pipeline with one colour question |
 | `references/master-documentary-prompt.md` | The flagship DOCUMENTARY prompt (owner-supplied, verbatim) — paste into any Claude session with a documentary title/topic; runs the 10-stage gated documentary package workflow (Part D) |
 | `extras/zach-d-films/SKILL.md` | 3D EXPLAINER sub-skill (Part E) — Three.js cartoon explainer shorts; read before any 3D explainer job |
+| `extras/ffmpeg-skill/SKILL.md` | EDIT sub-skill (Part F) — 42 FFmpeg tools for editing real footage; read before any EDIT job |

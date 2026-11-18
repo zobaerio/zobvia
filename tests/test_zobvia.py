@@ -11,7 +11,8 @@ v1.3 (12 SFX types + peak levels, --genre scenes + caption defaults,
 --sfx-theme, 3D/genre pipeline registration),
 v1.4 (accent2/accent3 WCAG companions, full SFX coverage — every scene
 sounded, multi-colour + interactivity layer in the starter source),
-v1.6 (DOCUMENTARY mode bundle, 3D explainer sub-skill bundle).
+v1.6 (DOCUMENTARY mode bundle, 3D explainer sub-skill bundle),
+v1.7 (EDIT mode: bundled ffmpeg-skill toolset).
 """
 import json
 import subprocess
@@ -804,3 +805,20 @@ class BundledAdditionsV16(unittest.TestCase):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("PART E", skill)
         self.assertIn("extras/zach-d-films", skill)
+
+
+    def test_ffmpeg_edit_bundled(self):
+        base = ROOT / "extras" / "ffmpeg-skill"
+        self.assertTrue((base / "SKILL.md").is_file())
+        self.assertTrue((base / "LICENSE").is_file())
+        for tool in ("probe.py", "cut.py", "join.py", "silence.py",
+                     "fit.py", "caption.py", "overlay.py", "loudness.py",
+                     "render.py", "export.py", "check.py", "_contract.py"):
+            self.assertTrue((base / "scripts" / tool).is_file(), tool)
+        for tpl in ("tiktok.json", "reels.json", "youtube.json"):
+            self.assertTrue((base / "templates" / tpl).is_file(), tpl)
+        sub = (base / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Bundled with Zobvia", sub)
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("PART F", skill)
+        self.assertIn("extras/ffmpeg-skill", skill)

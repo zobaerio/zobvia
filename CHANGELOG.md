@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.0 — 2026-11-17
+
+### Added
+- **EDIT mode (Part F)** — the owner asked to add [kajisho5/ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (v3.10.1, main @ f1c97cb, MIT License). It is bundled at `extras/ffmpeg-skill/` (SKILL.md + `scripts/` + `references/` + `templates/` + LICENSE, 82 files) and wired into SKILL.md as the EDIT mode: 42 local FFmpeg tools for editing REAL footage — cut/join, silence removal and filler-word cuts, fit/reframe/crop, captions (burn, mux, karaoke), overlays and graphics, colour (HDR to SDR, LUTs), audio cleanup/sync/ducking, loudness versions, platform exports (tiktok, reels, shorts, youtube, x, linkedin, facebook, podcast, audiogram templates), delivery checks and before/after reports. Pure Python stdlib; needs FFmpeg 6.1+ and Python 3.10+; no cloud, no API keys. Not bundled: the upstream docs site, demos, tests and npm/MCP packaging (the tools run standalone). Verified on FFmpeg 8.1.2: `doctor` reports 86 capabilities, 0 required missing; a probe -> cut -> loudness -> check chain on a real Zobvia promo clip passed all 13 YouTube checks (loudness exactly -14.0 LUFS). EDIT complements CREATE: CREATE builds motion graphics from an SRT, EDIT cuts and finishes existing footage.
+- Capability index: 235 -> **277** named items (+42 EDIT tools).
+
+
 ## 1.6.0 — 2026-11-17
 
 Three owner-supplied additions: a documentary mode, a stronger LEARN, and a real-3D explainer.
