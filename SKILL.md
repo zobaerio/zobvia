@@ -12,8 +12,10 @@ with FFmpeg. Style is learned; footage, voice, and music are never
 reused. Bundled sub-skills extend it further: a 3D cartoon
 explainer engine (Part E), the ffmpeg-skill toolset (Part F), a
 headless-Blender 3D asset toolkit (Part G), a typed audio-production
-engine (Part H), a colour-grading engine (Part I) and an HTML-scene
-video renderer (Part J).
+engine (Part H), a colour-grading engine (Part I), an HTML-scene
+video renderer (Part J), a production BRAIN that plans and
+orchestrates the others (Part K), a Remotion-on-footage bridge
+(Part L) and a thumbnail renderer (Part M).
 
 ## Philosophy
 
@@ -62,6 +64,9 @@ first LEARN or CREATE run on a machine:
 | An audio operation graph: gain/trim/mix/stems/loudness versions/downmix/noise reduction | AUDIO PRODUCTION (Part H) |
 | A colour treatment on a video: HDR to SDR, LUT, retag, primary correction, legalize, camera match | COLOR GRADING (Part I) |
 | An HTML scene / title card / slate / stinger to render to video | HYPERFRAMES (Part J) |
+| A whole video/recording to plan, produce and deliver end-to-end | BRAIN (Part K) |
+| Motion graphics / animated captions / jump cuts ON a real recording (Remotion) | REMOTION (Part L) |
+| A thumbnail to render (decided frame + text + layout) | THUMBNAIL (Part M) |
 | Neither, or genuinely unclear | Ask one question: learn or create? |
 
 Auto-selection rules:
@@ -580,6 +585,60 @@ scene renderer, not an editor: CREATE (Part B) remains the tool for
 SRT-driven motion graphics. Upstream: kajisho5/hyperframes-skill,
 MIT.
 
+## PART K — BRAIN (bundled video-production-agent)
+
+For a whole production — "edit/finish/deliver this recording" — use
+the bundled video-production-agent at `extras/video-production-agent/`:
+read its `SKILL.md` (and its CLAUDE.md). It is the ecosystem's brain:
+YOU (the chat model) do the reasoning; it plans, validates, gates on
+human approval and records provenance, driving the execution skills
+above (EDIT, AUDIO PRODUCTION, COLOR GRADING, THUMBNAIL) through the
+`video-agent` CLI (24 commands: doctor, skills, analyze, propose,
+plan, brief, validate, render, approve, deliver, publish, ...). Run
+it as `PYTHONPATH=extras/video-production-agent/src python3 -m
+video_agent.cli --ffmpeg-skill-dir extras/ffmpeg-skill <command>`.
+Start with `doctor` and `skills`: siblings that are not bundled
+(media-analysis, motion-graphics, transcription, dubbing, detection)
+report UNAVAILABLE there — believe it and work with what is
+AVAILABLE; never claim a step ran when its skill is unavailable.
+It is young software (v0.1.x): prefer plan/analyze/validate before
+render, and keep its approval gates. Upstream:
+kajisho5/video-production-agent, MIT.
+
+## PART L — REMOTION (bundled remotion-ffmpeg-skill)
+
+For motion graphics ON real footage — animated captions timed from
+an SRT, silence jump cuts with punch-in zooms, audio-peak/beat-synced
+motion, titles, karaoke, picture-in-picture, highlights — use the
+bundled remotion-ffmpeg-skill at `extras/remotion-ffmpeg-skill/`:
+read its `SKILL.md`. Flow: `scripts/doctor.py`, `scripts/init.py
+<project> --install` (scaffolds a Remotion project with 9
+compositions: Captioned, Jumpcut, PeakPulse, Titled, Highlights,
+BeatMontage, Karaoke, Pip, Emphasis), `scripts/analyze.py <video>
+--captions <srt>` (measures the footage with the bundled
+ffmpeg-skill and writes the timeline), `scripts/render.py --project
+<project> --comp <name> --timeline <timeline.json>` (renders, then
+verifies and contact-sheets the result). CREATE (Part B) builds
+standalone motion-graphics videos from an SRT; REMOTION puts
+graphics over an existing recording — pick by which one the user
+has. Upstream: kajisho5/remotion-ffmpeg-skill, MIT.
+
+## PART M — THUMBNAIL (bundled thumbnail-skill)
+
+For rendering a thumbnail whose content is DECIDED — which still or
+exact video timestamp, what text, what layout (decide with
+`references/thumbnail-title.md`) — use the bundled thumbnail-skill
+at `extras/thumbnail-skill/`: read its `SKILL.md`. It renders
+PNG/JPEG with provenance via a `thumbnail/<tool>` JSON document on
+stdin (9 tools: validate, render, extract_frame, render_batch,
+render_variants, render_layers, choose_frame, place_text,
+generate_background): `PYTHONPATH=extras/thumbnail-skill/src
+python3 -m thumbnail_skill.cli run - --json`, with
+`THUMBNAIL_SKILL_FFMPEG_SKILL_DIR=extras/ffmpeg-skill` when a video
+frame is an asset. Needs Pillow. It never chooses the frame, text or
+design itself — that decision is yours or the user's. Upstream:
+kajisho5/thumbnail-skill, MIT.
+
 ## Hard Rules
 
 1. Measurable numbers over adjectives — in analysis, plans, and reports.
@@ -658,3 +717,6 @@ up front.
 | `extras/audio-production-skill/SKILL.md` | AUDIO PRODUCTION sub-skill (Part H) — typed audio operation graphs; read before any audio-production job |
 | `extras/color-grading-skill/SKILL.md` | COLOR GRADING sub-skill (Part I) — typed colour treatments; read before any grading job |
 | `extras/hyperframes-skill/SKILL.md` | HYPERFRAMES sub-skill (Part J) — HTML-scene video rendering; read before any HyperFrames job |
+| `extras/video-production-agent/SKILL.md` | BRAIN sub-skill (Part K) — production planning/orchestration; read before any end-to-end production job |
+| `extras/remotion-ffmpeg-skill/SKILL.md` | REMOTION sub-skill (Part L) — motion graphics on real footage; read before any Remotion-on-footage job |
+| `extras/thumbnail-skill/SKILL.md` | THUMBNAIL sub-skill (Part M) — decided-thumbnail rendering; read before any thumbnail render job |

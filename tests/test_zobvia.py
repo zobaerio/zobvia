@@ -13,7 +13,8 @@ v1.4 (accent2/accent3 WCAG companions, full SFX coverage — every scene
 sounded, multi-colour + interactivity layer in the starter source),
 v1.6 (DOCUMENTARY mode bundle, 3D explainer sub-skill bundle),
 v1.7 (EDIT mode: bundled ffmpeg-skill toolset),
-v1.8 (BLENDER, AUDIO PRODUCTION, COLOR GRADING, HYPERFRAMES bundles).
+v1.8 (BLENDER, AUDIO PRODUCTION, COLOR GRADING, HYPERFRAMES bundles),
+v1.9 (BRAIN, REMOTION, THUMBNAIL bundles).
 """
 import json
 import subprocess
@@ -848,4 +849,28 @@ class BundledAdditionsV16(unittest.TestCase):
             self.assertIn("Bundled with Zobvia", sub, name)
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         for part in ("PART G", "PART H", "PART I", "PART J"):
+            self.assertIn(part, skill)
+
+
+    def test_top3_bundles(self):
+        bundles = {
+            "video-production-agent": (
+                "src/video_agent/cli.py", "CLAUDE.md",
+                "schemas/project.schema.json", "profiles/youtube.json"),
+            "remotion-ffmpeg-skill": (
+                "scripts/render.py", "scripts/analyze.py",
+                "scripts/init.py", "cli/remotion-ffmpeg-skill.js"),
+            "thumbnail-skill": (
+                "src/thumbnail_skill/cli.py", "pyproject.toml"),
+        }
+        for name, keys in bundles.items():
+            base = ROOT / "extras" / name
+            self.assertTrue((base / "SKILL.md").is_file(), name)
+            self.assertTrue((base / "LICENSE").is_file(), name)
+            for rel in keys:
+                self.assertTrue((base / rel).is_file(), f"{name}/{rel}")
+            sub = (base / "SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("Bundled with Zobvia", sub, name)
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        for part in ("PART K", "PART L", "PART M"):
             self.assertIn(part, skill)

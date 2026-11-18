@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.9.0 — 2026-11-18
+
+### Added
+- **The owner's Top-3 picks from the kajisho5 ecosystem (all MIT): the Brain, the Remotion bridge, and Thumbnails.**
+  - **BRAIN (Part K)** — kajisho5/video-production-agent v0.1.0 (main @ 7162c69) at `extras/video-production-agent/`: the ecosystem's orchestrator. The chat model reasons; the agent plans, validates, gates on human approval and records provenance, driving the bundled execution skills through the `video-agent` CLI (24 commands). Bundled: SKILL.md, CLAUDE.md, src/, schemas/, profiles/, tools/, pyproject.toml, LICENSE (209 files). Verified here: `doctor` (ffmpeg/encoders/filters AVAILABLE), `skills` (found the bundled ffmpeg-skill 21/21 tools, audio-production v1.3.2 and color-grading v1.1.0 as AVAILABLE; unbundled siblings honestly UNAVAILABLE), and an `analyze` run on a real 54 s promo (probe + silence + loudness observations recorded, -13.9 LUFS). Young software (0.1.x) — its approval gates stay on.
+  - **REMOTION (Part L)** — kajisho5/remotion-ffmpeg-skill v0.14.0 (main @ e34a10d) at `extras/remotion-ffmpeg-skill/`: motion graphics over real footage, driven by ffmpeg-skill measurements — 9 compositions (Captioned, Jumpcut, PeakPulse, Titled, Highlights, BeatMontage, Karaoke, Pip, Emphasis) + 7 tools. Bundled: SKILL.md, AGENTS.md, scripts/, templates/, references/, cli/, package.json, LICENSE (39 files). Verified end-to-end here: doctor all-ok (it auto-located the bundled ffmpeg-skill), init + npm install, analyze of a 10 s clip with an SRT into a measured timeline, and a Captioned render — verified 1920x1080 / 30 fps / 10.13 s with the animated captions visible on the tool's own contact sheet.
+  - **THUMBNAIL (Part M)** — kajisho5/thumbnail-skill v0.1.18 (main @ d063550) at `extras/thumbnail-skill/`: renders caller-decided thumbnails (still or exact video timestamp + text + layout) to PNG/JPEG with provenance — 9 tools including batch, variants and layers. Bundled: SKILL.md, src/, pyproject.toml, LICENSE (23 files). Verified here: doctor ok, and a real 1280x720 thumbnail rendered from a promo frame + title text and visually checked. Needs Pillow.
+- Capability index: 324 -> **373** named items (+24 agent commands, +16 Remotion compositions/tools, +9 thumbnail tools).
+
+
 ## 1.8.0 — 2026-11-18
 
 ### Added
